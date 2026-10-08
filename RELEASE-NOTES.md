@@ -1,3 +1,14 @@
+# 0.2.1-preview.1 — release candidate
+
+- Adds optional localized content descriptions to signed placements. Rejects malformed present metadata; manifests without descriptions retain their existing behavior.
+- Pairs descriptions with the actual resolved release through download, cache, retained historical fallback, and offline restart. Bundled references carry separately declared `bundledAccessibility`; undescribed remote artwork never borrows it.
+- Adds pure locale selection: exact match ignoring case, progressively fewer subtags, then the declared default. The app supplies the language tag and retains control of decoration, contextual labels, and action semantics.
+- Generates optional bundled descriptions offline with Kotlin string interpolation escaped. No Compose dependency, automatic label attachment, or new runtime dependency is added.
+
+Recompile consuming applications and their generated references when replacing the AAR. The optional `AssetRef` and `ResolvedAsset` constructor fields preserve Kotlin source call sites, but change their JVM constructor signatures.
+
+Release boundary: 82 shared signed fixtures (65 existing cases and 17 accessibility cases). Separate unpublished animation fixture work is excluded from this candidate. This section describes a locally prepared candidate, not a published release or completed manual TalkBack acceptance.
+
 # 0.2.0-preview.1
 
 - Recognizes the signed rendition-schema-1 extension without breaking legacy WebP manifests. Rejects malformed or unknown explicit extensions, including null arrays and versions.

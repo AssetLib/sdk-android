@@ -1,6 +1,8 @@
 # Assetlib Android SDK
 
-Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.2.0-preview.1** adds demand-sized PNG/WebP renditions and remains a developer preview, not a production support commitment.
+Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.2.1-preview.1** adds optional localized accessibility descriptions alongside demand-sized PNG/WebP renditions. This remains a developer preview, not a production support commitment.
+
+The **0.2.1-preview.1** candidate is awaiting publication. The installation instructions below identify that upcoming version; use a local build to try the candidate before its release assets are available. Recompile consuming apps when updating the AAR because the optional public constructor fields change JVM signatures.
 
 [Console](https://assetlib-console.vercel.app) · [Native travel demo](https://github.com/AssetLib/demo-android) · [JavaScript SDK](https://github.com/AssetLib/sdk-js)
 
@@ -8,10 +10,10 @@ The app owns its screens and bundled fallbacks. Assetlib changes artwork assigne
 
 ## Install the preview
 
-Download `assetlib-android-0.2.0-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.2.0-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
+After publication, download `assetlib-android-0.2.1-preview.1.aar` from the [versioned release](https://github.com/AssetLib/sdk-android/releases/tag/v0.2.1-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. Before publication, run `./gradlew :sdk:assembleRelease` and `node scripts/prepare-release.mjs` to produce the same named candidate under `build/release/`. The demo's hash-locked downloader must be updated separately to use this release. This AAR does not bundle dependencies; add these exact dependencies to your app:
 
 ```kotlin
-implementation(files("libs/assetlib-android-0.2.0-preview.1.aar"))
+implementation(files("libs/assetlib-android-0.2.1-preview.1.aar"))
 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 implementation("org.bouncycastle:bcprov-jdk18on:1.86")
@@ -36,6 +38,23 @@ val bitmap = AndroidAssets.bitmap(asset)
 ```
 
 Suspend operations perform disk/network/decode work on `Dispatchers.IO`. Collect `client.status` for release state. A resolved image's `source` and `sequence` describe the actual artwork: earlier cached artwork can have an older sequence than the accepted manifest. `BUNDLE` intentionally has no downloaded bytes; the host app supplies its own image.
+
+### Accessible artwork
+
+Signed placements may include optional `accessibility: { "defaultLocale": "en", "descriptions": { "en": "An illustrated coastal escape", "th": "ภาพวาดชายฝั่ง" } }`. This is content metadata for that artwork version. It requires no additional manifest version. Older manifests can omit it. The client rejects malformed or null metadata, duplicate locales ignoring case, invalid locale tags, missing default descriptions, more than 32 locales, blank descriptions, and descriptions longer than 1,000 UTF-16 code units. Locale tags use letters followed by optional alphanumeric subtags separated by hyphens, with a maximum length of 63 characters.
+
+`asset.localizedDescription("en-US")` tries an exact locale ignoring case, then progressively removes subtags, then uses the declared default. It returns `null` when the resolved artwork has no metadata. Pass an explicit language tag from your app; the helper does not read device settings. Descriptions remain paired with the actual resolved release through download, cache, restart, and fallback to a retained release. Missing remote metadata never borrows a description from the bundled image.
+
+```kotlin
+// Informative artwork: use its resolved description or an app-owned contextual label.
+Image(bitmap.asImageBitmap(), contentDescription = asset.localizedDescription(languageTag))
+// Decorative artwork: the app explicitly chooses contentDescription = null.
+// Buttons keep an app-owned action label, such as "Explore coastal trips".
+```
+
+Keep the bitmap and its description in the same UI state update. Use a fixed app label only when remote replacements preserve that meaning. For informative images with no description, provide one at the call site. This SDK leaves Compose semantics and normal Android `Bitmap` rendering under app control; it does not automatically label images, infer decoration, or generate descriptions.
+
+For bundled fallback artwork, add optional `bundledAccessibility` to the checked-in catalog using the same object shape. Code generation passes it to `AssetRef(..., bundledAccessibility = AssetAccessibility(...))`. A `BUNDLE` result exposes only that bundled metadata, never the latest downloaded artwork's description. If you choose a bundled image after a later render failure, read its description from `ref.bundledAccessibility` as well.
 
 ### Rendition selection and Compose
 
@@ -90,6 +109,6 @@ node --test scripts/codegen.test.mjs
 ASSETLIB_PUBLIC_CONFIG_FILE=/absolute/path/public-config.json ./gradlew :sdk:testDebugUnitTest --rerun-tasks
 ```
 
-The checked-in synthetic interop corpus covers 65 signed cases, including UTF-8, key/signature tampering, invalid schema/URLs/renditions, and stateful replay/equivocation. Unit tests additionally cover target selection, legacy fallback, historical cache-only resolution, concurrent writers, restart/offline fallback, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
+The checked-in synthetic interop corpus covers 82 signed cases, including UTF-8, key/signature tampering, invalid schema/URLs/renditions/accessibility metadata, and stateful replay/equivocation. Unit tests additionally cover target selection, legacy fallback, historical cache-only resolution, locale lookup, description pairing across remote/cache/bundle states, concurrent writers, restart/offline fallback, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
 
 Only public artwork should be published to the hosted preview: delivery URLs are publicly retrievable. It is bounded preview infrastructure. See `SECURITY.md` for trust limits.

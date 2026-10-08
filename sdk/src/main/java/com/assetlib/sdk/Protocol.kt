@@ -77,7 +77,7 @@ data class PublicConfig private constructor(val orgId: String, val appId: String
 }
 
 /** Generate these from a checked-in catalog; layout remains owned by your app. */
-data class AssetRef(val key: String, val width: Int, val height: Int) {
+data class AssetRef(val key: String, val width: Int, val height: Int, val bundledAccessibility: AssetAccessibility? = null) {
     init { require(keyPattern.matches(key) && width in 1..8192 && height in 1..8192) { "Invalid asset reference." } }
 }
 /** Explicit pixel demand. Compose modifiers do not automatically change this value. */
@@ -87,7 +87,7 @@ data class AssetPixelSize(val width: Int, val height: Int) {
 /** Metadata returned by a successful bounded raster decode, not the source upload format. */
 data class AssetImageInfo(val mime: String, val width: Int, val height: Int)
 internal data class Candidate(val hash: String, val url: String, val bytes: Int, val mime: String = "image/webp", val width: Int? = null, val height: Int? = null)
-internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int, val renditions: List<Candidate> = emptyList())
+internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int, val renditions: List<Candidate> = emptyList(), val accessibility: AssetAccessibility? = null)
 internal data class Release(val sequence: Long, val payload: String, val envelope: JsonObject, val slots: List<Slot>)
 
 internal val nativeFormats = listOf("image/webp", "image/png")
@@ -159,7 +159,8 @@ internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
                 Candidate(renditionHash,renditionUrl,count,mime,rw,rh)
             }
         } else emptyList()
-        Slot(key,w,h,id,hash,url,size,renditions)
+        val accessibility = s["accessibility"]?.let(::parseAccessibility)
+        Slot(key,w,h,id,hash,url,size,renditions,accessibility)
     }
     return Release(seq,text,o,slots)
 }

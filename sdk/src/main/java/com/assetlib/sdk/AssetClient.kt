@@ -11,7 +11,10 @@ import kotlinx.coroutines.withContext
 
 enum class AssetSource { BUNDLE, CACHE, REMOTE }
 data class ResolvedAsset(val source: AssetSource, val sequence: Long?, val message: String, val bytes: ByteArray? = null, val sha256: String? = null,
-                         val mime: String? = null, val pixelWidth: Int? = null, val pixelHeight: Int? = null, val assetId: String? = null)
+                         val mime: String? = null, val pixelWidth: Int? = null, val pixelHeight: Int? = null, val assetId: String? = null,
+                         val accessibility: AssetAccessibility? = null) {
+    fun localizedDescription(locale: String? = null): String? = accessibility?.localizedDescription(locale)
+}
 data class ClientStatus(val initialized: Boolean = false, val sequence: Long = 0, val lastError: String? = null)
 data class RefreshResult(val updated: Boolean, val sequence: Long, val error: String? = null)
 
@@ -82,7 +85,7 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
                     return info
                 }
                 fun resolved(source: AssetSource,bytes: ByteArray,info: AssetImageInfo,message: String) =
-                    ResolvedAsset(source,release.sequence,message,bytes,candidate.hash,info.mime,info.width,info.height,slot.assetId)
+                    ResolvedAsset(source,release.sequence,message,bytes,candidate.hash,info.mime,info.width,info.height,slot.assetId,slot.accessibility)
                 try {
                     val cached = storage.getAsset(candidate.hash)
                     val cachedInfo = cached?.let(::valid)
@@ -95,6 +98,6 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
                 } catch(e: Exception) { if(e is CancellationException) throw e; reason = e.message ?: "Artwork unavailable." }
             }
         }
-        ResolvedAsset(AssetSource.BUNDLE,null,"Using bundled artwork. $reason")
+        ResolvedAsset(AssetSource.BUNDLE,null,"Using bundled artwork. $reason",accessibility=ref.bundledAccessibility)
     } }
 }

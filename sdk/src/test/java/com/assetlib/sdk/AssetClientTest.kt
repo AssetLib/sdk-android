@@ -28,7 +28,7 @@ class AssetClientTest {
             val result=runCatching { verifyEnvelope(envelope(name),config()) }
             assertEquals("$name: ${result.exceptionOrNull()}",c.string("verification") == "accept",result.isSuccess)
         }
-        assertEquals(65,cases.size)
+        assertEquals(82,cases.size)
     }
     @Test fun jsonIntegerSemanticsMatchJavascript() {
         for(value in listOf("1","1.0","1e0")) assertEquals(1L,objectJson("{\"n\":$value}",100).number("n",1,Int.MAX_VALUE.toLong()))

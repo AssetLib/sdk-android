@@ -1,4 +1,19 @@
-# Verification — October 7, 2026 (America/New_York)
+# Verification — October 8, 2026 (America/New_York)
+
+## 0.2.1-preview.1 accessibility candidate
+
+Prepared from public `origin/main` commit `a748d6e048376009badfe8459f0a213b80670184` on branch `codex/accessibility-0.2.1-preview.1`. This record covers local validation; GitHub CI for the pushed candidate commit is a separate release gate. No tag or release publication is asserted here. The original checkout's separate animation fixture work is preserved and excluded here.
+
+- `./gradlew :sdk:testDebugUnitTest`: **23 passed, 1 skipped, no failures**. The skipped test is the opt-in real-service test; no new hosted verification is claimed. Includes all **82 signed cases** in this scoped corpus and remote/cache/retained/bundled description pairing, locale fallback, UTF-16 bounds, and immutable metadata tests.
+- `node --test scripts/codegen.test.mjs`: **2 passed**. Covers deterministic output, rejection of malformed bundled descriptions, and literal Kotlin interpolation escaping.
+- `./gradlew :sdk:lint :sdk:assembleRelease`: **passed**.
+- `./gradlew :sdk:connectedDebugAndroidTest`: **5 passed** on the running Android 36.1 arm64 emulator. The new instrumentation test resolved signed artwork through the native decoder, inspected the actual accessibility node tree, found exactly one informative image with its English description, verified its update to Thai, excluded the decorative image, and retained the action button's app-owned label and click action. Four existing native raster/cache tests also passed.
+- The debug-only test Activity is excluded from the release AAR. The instrumentation APK targets SDK 36 to prevent Android's old-app warning from obscuring its test screen. The released library keeps minimum SDK 26 and does not impose an app target SDK.
+- `node scripts/prepare-release.mjs` produces `build/release/assetlib-android-0.2.1-preview.1.aar` (**84,155 bytes**), SHA-256 **`60a8ebe267f7aab6ef72e35546c97270008cdd7674dd17cc975f3395c85539c7`**. Archive inspection confirms SDK classes, manifest, consumer rules, and metadata only; no debug Activity, tests, fixture assets, or bundled third-party jars. The fixture checksum list was separately verified.
+
+The emulator had no enabled accessibility service. These automated node-tree checks do **not** establish manual TalkBack spoken output, focus traversal, physical-device coverage, or the consuming demo's Compose semantics. The public demo still uses its pinned older AAR; updating and validating that demo is a separate next step. Public constructor additions are Kotlin source-compatible but change JVM signatures; recompile consumers when replacing the AAR.
+
+## Historical verification — October 7, 2026
 
 Local evidence for SDK 0.1.0-preview.1, not a claim of broad production readiness:
 
