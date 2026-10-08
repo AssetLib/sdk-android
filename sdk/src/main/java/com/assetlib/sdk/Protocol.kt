@@ -31,8 +31,9 @@ internal fun objectJson(text: String, max: Int): JsonObject {
 internal fun JsonObject.string(name: String): String = (get(name) as? JsonPrimitive)?.takeIf { it.isString }?.content ?: error("Invalid $name.")
 internal fun JsonObject.number(name: String, min: Long, max: Long): Long {
     val p = get(name) as? JsonPrimitive ?: error("Invalid $name.")
-    val n = p.takeIf { !it.isString }?.longOrNull ?: error("Invalid $name.")
-    require(n in min..max) { "Invalid $name." }; return n
+    val n = p.takeIf { !it.isString }?.doubleOrNull ?: error("Invalid $name.")
+    require(n.isFinite() && n == kotlin.math.floor(n) && n >= min.toDouble() && n <= max.toDouble()) { "Invalid $name." }
+    return n.toLong()
 }
 internal fun keyBytes(pem: String): ByteArray {
     require(pem.length <= 256) { "Signing key exceeds the limit." }

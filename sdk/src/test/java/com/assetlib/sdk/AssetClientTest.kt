@@ -30,6 +30,10 @@ class AssetClientTest {
         }
         assertEquals(43,cases.size)
     }
+    @Test fun jsonIntegerSemanticsMatchJavascript() {
+        for(value in listOf("1","1.0","1e0")) assertEquals(1L,objectJson("{\"n\":$value}",100).number("n",1,Int.MAX_VALUE.toLong()))
+        for(value in listOf("1.5","1e99","true","\"1\"","0","2147483648")) assertTrue(runCatching { objectJson("{\"n\":$value}",100).number("n",1,Int.MAX_VALUE.toLong()) }.isFailure)
+    }
     @Test fun exactUtf8AndPemIdentity() {
         val release=verifyEnvelope(envelope("manifests/valid-seq1.json"),config())
         assertEquals(588,release.payload.toByteArray().size)
