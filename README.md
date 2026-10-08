@@ -1,6 +1,6 @@
 # Assetlib Android SDK
 
-Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.1.0-preview.1** is a developer preview, not a production support commitment.
+Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.2.0-preview.1** adds demand-sized PNG/WebP renditions and remains a developer preview, not a production support commitment.
 
 [Console](https://assetlib-console.vercel.app) · [Native travel demo](https://github.com/AssetLib/demo-android) · [JavaScript SDK](https://github.com/AssetLib/sdk-js)
 
@@ -8,10 +8,10 @@ The app owns its screens and bundled fallbacks. Assetlib changes artwork assigne
 
 ## Install the preview
 
-Download `assetlib-android-0.1.0-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.1.0-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
+Download `assetlib-android-0.2.0-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.2.0-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
 
 ```kotlin
-implementation(files("libs/assetlib-android-0.1.0-preview.1.aar"))
+implementation(files("libs/assetlib-android-0.2.0-preview.1.aar"))
 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 implementation("org.bouncycastle:bcprov-jdk18on:1.86")
@@ -29,13 +29,25 @@ val config = PublicConfig.parse(publicConfigJson)
 val client = AndroidAssets.client(context.applicationContext, config)
 client.initialize() // Revalidate durable state and signatures, without a request.
 client.refresh()    // Explicitly check the current signed release.
-val asset = client.resolve(AppAssets.Travel.coast)
+val asset = client.resolve(AppAssets.Travel.coast, targetPixels = AssetPixelSize(600, 450))
 val bitmap = AndroidAssets.bitmap(asset)
 // In Compose: bitmap?.let { Image(it.asImageBitmap(), contentDescription = "Coast") }
 // Otherwise render your normal bundled R.drawable fallback.
 ```
 
 Suspend operations perform disk/network/decode work on `Dispatchers.IO`. Collect `client.status` for release state. A resolved image's `source` and `sequence` describe the actual artwork: earlier cached artwork can have an older sequence than the accepted manifest. `BUNDLE` intentionally has no downloaded bytes; the host app supplies its own image.
+
+### Rendition selection and Compose
+
+Pass the actual target **pixel** width and height, including display density. Without `targetPixels`, the SDK uses the generated reference's logical dimensions. Both target dimensions must be integers in 1–8192. Layout modifiers alone do not tell the SDK a target; the demo forwards Compose `onSizeChanged` measurements explicitly. A 300 dp image on a 2× display requests 600 pixels.
+
+The signed extension uses `renditionSchemaVersion: 1`. An absent extension preserves legacy behavior; unknown versions, explicit nulls, malformed arrays, unsafe URLs, duplicate hashes, excessive bytes/pixels, and incompatible aspect ratios are rejected. Native selection supports WebP and PNG. Known SVG metadata is validated, but SVG is never downloaded or rendered by this client. Vector sources require server-prepared raster fallbacks on Android.
+
+The smallest raster meeting both target dimensions is preferred. Ties use byte length, then hash. If no raster meets the target, larger rasters are tried first. Unavailable candidates fall through in this deterministic order, with legacy WebP as the final compatibility candidate. Historical releases use cached candidates only. Set `supportedFormats = listOf("image/webp")` to exclude PNG; a format list must be unique, nonempty, and include WebP. SVG is not a supported native format option.
+
+Returned `mime`, `pixelWidth`, `pixelHeight`, `sha256`, `assetId`, and `sequence` describe the selected decoded raster. Every rendition is fully decoded with bounded dimensions, and its actual MIME and exact pixel dimensions must match its signed metadata before caching or use. Legacy WebP retains its aspect-compatible decoding rule. Source upload format is not inferred from delivered MIME.
+
+The SDK has no Compose dependency. The demo's small `rememberAssetArtworkPainter` adapter returns a standard `BitmapPainter` for a verified raster, or `painterResource` for the bundled fallback. It is a raster adapter, not native SVG support. Android documents these [Painter types](https://developer.android.com/develop/ui/compose/graphics/images/custompainter) and [bounded bitmap metadata decoding](https://developer.android.com/reference/android/graphics/BitmapFactory.Options).
 
 ### Typed references, generated offline
 
@@ -57,13 +69,13 @@ Use `AppAssets.Travel.coast` at image call sites. Generation validates duplicate
 
 - Exact UTF-8 signed payload bytes; pinned Ed25519 SPKI public key; `keyId` is the first 16 lowercase hex characters of SHA-256 of the exact PEM bytes.
 - HTTPS, exact organization/app delivery paths, no URL credentials/query/fragment, same-origin asset URLs, and no HTTP redirects. Default call/connect/read timeout 8 seconds (configurable 20 ms–30 seconds).
-- Schema, environment, release sequence, slot types/limits, asset byte count and SHA-256 are checked before use. Native image validation checks WebP decode, at most 8,192 per edge, at most 16,777,216 pixels, and within 2% relative aspect-ratio tolerance. Logical placement dimensions need not equal delivered pixel dimensions.
+- Schema, environment, release sequence, slot/rendition types and limits, asset byte count and SHA-256 are checked before use. Native image validation checks PNG/WebP decode, at most 8,192 per edge, at most 16,777,216 pixels, and within 2% relative aspect-ratio tolerance. Logical placement dimensions need not equal delivered pixel dimensions; declared rendition pixel dimensions must match exactly.
 - The default storage locks and rechecks state across clients/processes before an atomic replacement. Lower sequences and different payload bytes reusing a sequence are rejected, including reordered/normalized equivalent JSON. Rollback is a **new higher sequence** publishing previous artwork.
 - Resolve uses the latest compatible cached image, then downloads that release's image, then tries earlier verified cached releases, then the host's bundle. It does not download historical fallback releases.
 - Durable state lives under `noBackupFilesDir`; disposable artwork uses `cacheDir`. Each connection namespace retains at most 8 signed releases / 3 MiB state and 50 MiB / 100 cache entries. The OS may evict cached images; retain bundled fallbacks. Switching configurations creates separate namespaces.
 - Invalid durable state fails closed to the bundle. Disconnecting does not clear replay protection. Clearing app data/reinstalling resets local trust history; no client-only scheme can stop rollback of all local app state by a privileged attacker.
 
-The public `AssetClient`/`AssetStorage` interfaces also permit custom integrations. Custom storage must provide the documented atomic comparison, durability, locking, and bounds; the standard Android factory supplies native image validation. Preview networking is explicit refresh plus on-demand resolution, not a background download service or analytics SDK.
+The public `AssetClient`/`AssetStorage` interfaces also permit custom integrations. Custom storage must provide the documented atomic comparison, durability, locking, and bounds. The default client and Android factory both perform native image validation. Version 0.2 replaces the former optional Boolean validator with `decodeImage: (ByteArray) -> AssetImageInfo?`; custom decoders must fully validate supported raster bytes and return actual MIME/dimensions. JVM tests inject a fixture metadata reader; Android instrumentation separately tests the real decoder. Preview networking is explicit refresh plus on-demand resolution, not a background download service or analytics SDK.
 
 ## Build and test
 
@@ -78,6 +90,6 @@ node --test scripts/codegen.test.mjs
 ASSETLIB_PUBLIC_CONFIG_FILE=/absolute/path/public-config.json ./gradlew :sdk:testDebugUnitTest --rerun-tasks
 ```
 
-The checked-in synthetic interop corpus covers 43 signed cases, including UTF-8, key/signature tampering, invalid schema/URLs, and stateful replay/equivocation. Unit tests additionally cover concurrent writers, restart/offline fallback, cache corruption and limits. Instrumented tests decode actual WebP data and exercise an independent offline client. They do not establish performance on all Android devices.
+The checked-in synthetic interop corpus covers 65 signed cases, including UTF-8, key/signature tampering, invalid schema/URLs/renditions, and stateful replay/equivocation. Unit tests additionally cover target selection, legacy fallback, historical cache-only resolution, concurrent writers, restart/offline fallback, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
 
 Only public artwork should be published to the hosted preview: delivery URLs are publicly retrievable. It is bounded preview infrastructure. See `SECURITY.md` for trust limits.

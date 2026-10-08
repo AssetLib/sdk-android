@@ -28,7 +28,7 @@ class AssetClientTest {
             val result=runCatching { verifyEnvelope(envelope(name),config()) }
             assertEquals("$name: ${result.exceptionOrNull()}",c.string("verification") == "accept",result.isSuccess)
         }
-        assertEquals(43,cases.size)
+        assertEquals(65,cases.size)
     }
     @Test fun jsonIntegerSemanticsMatchJavascript() {
         for(value in listOf("1","1.0","1e0")) assertEquals(1L,objectJson("{\"n\":$value}",100).number("n",1,Int.MAX_VALUE.toLong()))
@@ -51,11 +51,11 @@ class AssetClientTest {
     @Test fun refreshDownloadRestartOfflineAndRollback() = runBlocking {
         val dir=Files.createTempDirectory("assetlib-test").toFile()
         try {
-            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=AssetClient(config(),storage(dir),t)
+            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=fixtureClient(config(),storage(dir),t)
             assertTrue(c.refresh().updated); assertEquals(AssetSource.REMOTE,c.resolve(ref).source)
             t.manifest=bytes("manifests/valid-seq2.json"); t.asset=bytes("assets/ridge.webp")
             assertTrue(c.refresh().updated); assertEquals(2L,c.resolve(ref).sequence)
-            val restarted=AssetClient(config(),storage(dir),t); t.offline=true
+            val restarted=fixtureClient(config(),storage(dir),t); t.offline=true
             assertEquals(2L,restarted.initialize().sequence); assertEquals(AssetSource.CACHE,restarted.resolve(ref).source)
             assertNotNull(restarted.refresh().error); assertEquals(2L,restarted.resolve(ref).sequence)
             t.offline=false; t.manifest=bytes("manifests/valid-rollback-seq3.json")
@@ -66,7 +66,7 @@ class AssetClientTest {
     @Test fun corruptCurrentBytesUsePriorVerifiedCache() = runBlocking {
         val dir=Files.createTempDirectory("assetlib-test").toFile()
         try {
-            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=AssetClient(config(),storage(dir),t)
+            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=fixtureClient(config(),storage(dir),t)
             c.refresh(); c.resolve(ref)
             t.manifest=bytes("manifests/valid-seq2.json"); t.asset=bytes("assets/ridge-tampered.webp"); c.refresh()
             val result=c.resolve(ref); assertEquals(AssetSource.CACHE,result.source); assertEquals(1L,result.sequence)
@@ -78,7 +78,7 @@ class AssetClientTest {
         try {
             val s=storage(dir); s.saveState(text("state/after-seq2.json"))
             File(dir,"state/${config().namespace}/state.json").writeText("corrupt")
-            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=AssetClient(config(),s,t)
+            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=fixtureClient(config(),s,t)
             assertNotNull(c.refresh().error); assertEquals(AssetSource.BUNDLE,c.resolve(ref).source); assertTrue(t.requests.isEmpty())
         } finally { dir.deleteRecursively() }
     }
@@ -87,7 +87,7 @@ class AssetClientTest {
             val dir=Files.createTempDirectory("assetlib-test").toFile()
             try {
                 val s=storage(dir); s.saveState(text("state/after-seq2.json"))
-                val c=AssetClient(config(),s,Transport(bytes("manifests/stateful/$name.json"),bytes("assets/coast.webp")))
+                val c=fixtureClient(config(),s,Transport(bytes("manifests/stateful/$name.json"),bytes("assets/coast.webp")))
                 assertNotNull(c.refresh().error); assertEquals(2L,c.status.value.sequence)
                 assertEquals(2L,decodeState(s.loadState()!!,config()).highest)
             } finally { dir.deleteRecursively() }
@@ -97,9 +97,9 @@ class AssetClientTest {
         val dir=Files.createTempDirectory("assetlib-test").toFile()
         try {
             val a=storage(dir); val b=storage(dir); val entered=CountDownLatch(1); val proceed=CountDownLatch(1)
-            val slow=AssetClient(config(),a,AssetTransport { _,_ -> entered.countDown(); check(proceed.await(5,TimeUnit.SECONDS)); bytes("manifests/valid-seq1.json") })
+            val slow=fixtureClient(config(),a,AssetTransport { _,_ -> entered.countDown(); check(proceed.await(5,TimeUnit.SECONDS)); bytes("manifests/valid-seq1.json") })
             val pending=async { slow.refresh() }; withContext(Dispatchers.IO) { check(entered.await(5,TimeUnit.SECONDS)) }
-            val fast=AssetClient(config(),b,Transport(bytes("manifests/valid-seq2.json"),bytes("assets/ridge.webp")))
+            val fast=fixtureClient(config(),b,Transport(bytes("manifests/valid-seq2.json"),bytes("assets/ridge.webp")))
             assertTrue(fast.refresh().updated); proceed.countDown()
             assertNotNull(pending.await().error); assertEquals(2L,slow.status.value.sequence)
             val low=ReleaseState(1,listOf(verifyEnvelope(envelope("manifests/valid-seq1.json"),config()))).encode()
@@ -111,7 +111,7 @@ class AssetClientTest {
     @Test fun incompatibleReferenceAndShortBodyStayBundled() = runBlocking {
         val dir=Files.createTempDirectory("assetlib-test").toFile()
         try {
-            val t=Transport(bytes("manifests/valid-seq2.json"),bytes("assets/ridge-truncated.webp")); val c=AssetClient(config(),storage(dir),t)
+            val t=Transport(bytes("manifests/valid-seq2.json"),bytes("assets/ridge-truncated.webp")); val c=fixtureClient(config(),storage(dir),t)
             c.refresh(); assertEquals(AssetSource.BUNDLE,c.resolve(AssetRef("travel.coast",600,450)).source)
             assertEquals(1,t.requests.size); assertEquals(AssetSource.BUNDLE,c.resolve(ref).source)
         } finally { dir.deleteRecursively() }
@@ -119,7 +119,7 @@ class AssetClientTest {
     @Test fun cacheCorruptionIsNeverDisplayed() = runBlocking {
         val dir=Files.createTempDirectory("assetlib-test").toFile()
         try {
-            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=AssetClient(config(),storage(dir),t)
+            val t=Transport(bytes("manifests/valid-seq1.json"),bytes("assets/coast.webp")); val c=fixtureClient(config(),storage(dir),t)
             c.refresh(); val good=c.resolve(ref)
             File(dir,"cache/${config().namespace}/${good.sha256}").writeText("bad")
             t.offline=true; assertEquals(AssetSource.BUNDLE,c.resolve(ref).source)
@@ -140,7 +140,7 @@ class AssetClientTest {
         val dir=Files.createTempDirectory("assetlib-test").toFile()
         try {
             for(b in listOf(byteArrayOf(0xc3.toByte(),0x28),ByteArray(Limits.MANIFEST_BYTES+1))) {
-                val c=AssetClient(config(),storage(dir),AssetTransport { _,_ -> b }); assertNotNull(c.refresh().error)
+                val c=fixtureClient(config(),storage(dir),AssetTransport { _,_ -> b }); assertNotNull(c.refresh().error)
             }
             assertTrue(runCatching { HttpsTransport().get("http://localhost/manifest",100) }.isFailure)
         } finally { dir.deleteRecursively() }
@@ -150,9 +150,9 @@ class AssetClientTest {
         val live=PublicConfig.parse(File(path).readText()); val dir=Files.createTempDirectory("assetlib-live").toFile()
         try {
             fun disk()=FileAssetStorage(File(dir,"state"),File(dir,"cache"),live)
-            val c=AssetClient(live,disk()); val result=c.refresh(); assertNull(result.error); assertTrue(result.sequence > 0)
+            val c=fixtureClient(live,disk()); val result=c.refresh(); assertNull(result.error); assertTrue(result.sequence > 0)
             val image=c.resolve(ref); assertEquals(AssetSource.REMOTE,image.source); assertNotNull(image.bytes)
-            val restarted=AssetClient(live,disk(),AssetTransport { _,_ -> error("Network disabled") })
+            val restarted=fixtureClient(live,disk(),AssetTransport { _,_ -> error("Network disabled") })
             assertEquals(result.sequence,restarted.initialize().sequence); assertEquals(AssetSource.CACHE,restarted.resolve(ref).source)
         } finally { dir.deleteRecursively() }
     }

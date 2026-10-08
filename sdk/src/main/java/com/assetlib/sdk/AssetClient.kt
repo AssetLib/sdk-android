@@ -10,11 +10,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 enum class AssetSource { BUNDLE, CACHE, REMOTE }
-data class ResolvedAsset(val source: AssetSource, val sequence: Long?, val message: String, val bytes: ByteArray? = null, val sha256: String? = null)
+data class ResolvedAsset(val source: AssetSource, val sequence: Long?, val message: String, val bytes: ByteArray? = null, val sha256: String? = null,
+                         val mime: String? = null, val pixelWidth: Int? = null, val pixelHeight: Int? = null, val assetId: String? = null)
 data class ClientStatus(val initialized: Boolean = false, val sequence: Long = 0, val lastError: String? = null)
 data class RefreshResult(val updated: Boolean, val sequence: Long, val error: String? = null)
 
-class AssetClient(config: PublicConfig, private val storage: AssetStorage, private val transport: AssetTransport = HttpsTransport(), private val validateImage: (ByteArray,AssetRef) -> Boolean = { _,_ -> true }) {
+class AssetClient(config: PublicConfig, private val storage: AssetStorage, private val transport: AssetTransport = HttpsTransport(), private val decodeImage: (ByteArray) -> AssetImageInfo? = AndroidAssets::inspectImage) {
     val config = PublicConfig.parse(config.toJson())
     private val mutex = Mutex()
     private var state = ReleaseState()
@@ -65,21 +66,34 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
             RefreshResult(false,state.highest,message)
         }
     } }
-    suspend fun resolve(ref: AssetRef): ResolvedAsset = withContext(Dispatchers.IO) { mutex.withLock {
+    suspend fun resolve(ref: AssetRef, targetPixels: AssetPixelSize = AssetPixelSize(ref.width,ref.height), supportedFormats: List<String> = nativeFormats): ResolvedAsset = withContext(Dispatchers.IO) { mutex.withLock {
+        validateFormats(supportedFormats)
         syncState()
         var reason = storageFailure ?: "No compatible published artwork is available."
         state.history.forEachIndexed { index, release ->
             val slot = release.slots.find { it.key == ref.key && it.width == ref.width && it.height == ref.height } ?: return@forEachIndexed
-            fun valid(bytes: ByteArray) = bytes.size == slot.bytes && bytes.size <= Limits.ASSET_BYTES && sha256(bytes) == slot.hash && validateImage(bytes,ref)
-            try {
-                val cached = storage.getAsset(slot.hash)
-                if(cached != null && valid(cached)) return@withLock ResolvedAsset(AssetSource.CACHE,release.sequence,if(index == 0) "Verified artwork from this device." else "Using earlier verified release ${release.sequence}. $reason",cached,slot.hash)
-                if(index != 0) return@forEachIndexed // Retained releases are cache-only fallbacks.
-                val bytes = transport.get(slot.url,slot.bytes)
-                require(valid(bytes)) { "Artwork bytes or decoded bounds do not match the release." }
-                storage.putAsset(slot.hash,bytes)
-                return@withLock ResolvedAsset(AssetSource.REMOTE,release.sequence,"Downloaded and verified artwork.",bytes,slot.hash)
-            } catch(e: Exception) { if(e is CancellationException) throw e; reason = e.message ?: "Artwork unavailable." }
+            for(candidate in candidates(slot,targetPixels,supportedFormats)) {
+                fun valid(bytes: ByteArray): AssetImageInfo? {
+                    if(bytes.size != candidate.bytes || bytes.size > Limits.ASSET_BYTES || sha256(bytes) != candidate.hash) return null
+                    val info = try { decodeImage(bytes) } catch(e: Exception) { if(e is CancellationException) throw e; null } ?: return null
+                    if(info.mime != candidate.mime || info.width !in 1..8192 || info.height !in 1..8192 || info.width.toLong()*info.height > Limits.DECODED_PIXELS) return null
+                    if(candidate.width != null && (info.width != candidate.width || info.height != candidate.height)) return null
+                    if(kotlin.math.abs(info.width.toDouble()/info.height - ref.width.toDouble()/ref.height)/(ref.width.toDouble()/ref.height) > .02) return null
+                    return info
+                }
+                fun resolved(source: AssetSource,bytes: ByteArray,info: AssetImageInfo,message: String) =
+                    ResolvedAsset(source,release.sequence,message,bytes,candidate.hash,info.mime,info.width,info.height,slot.assetId)
+                try {
+                    val cached = storage.getAsset(candidate.hash)
+                    val cachedInfo = cached?.let(::valid)
+                    if(cached != null && cachedInfo != null) return@withLock resolved(AssetSource.CACHE,cached,cachedInfo,if(index == 0) "Verified artwork from this device." else "Using earlier verified release ${release.sequence}. $reason")
+                    if(index != 0) continue // Every candidate of a historical release is cache-only.
+                    val bytes = transport.get(candidate.url,candidate.bytes)
+                    val info = valid(bytes) ?: error("Artwork bytes, format, or pixel dimensions do not match the signed release.")
+                    storage.putAsset(candidate.hash,bytes)
+                    return@withLock resolved(AssetSource.REMOTE,bytes,info,"Downloaded and verified artwork.")
+                } catch(e: Exception) { if(e is CancellationException) throw e; reason = e.message ?: "Artwork unavailable." }
+            }
         }
         ResolvedAsset(AssetSource.BUNDLE,null,"Using bundled artwork. $reason")
     } }

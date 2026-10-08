@@ -6,6 +6,7 @@ import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
+import kotlin.math.abs
 import kotlinx.serialization.json.*
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 
@@ -16,6 +17,8 @@ object Limits {
     const val CACHE_BYTES = 50L * 1024 * 1024
     const val CACHE_ENTRIES = 100
     const val HISTORY = 8
+    const val SVG_BYTES = 256 * 1024
+    const val DECODED_PIXELS = 16_777_216L
 }
 
 internal val json = Json { isLenient = false; allowSpecialFloatingPointValues = false }
@@ -77,8 +80,38 @@ data class PublicConfig private constructor(val orgId: String, val appId: String
 data class AssetRef(val key: String, val width: Int, val height: Int) {
     init { require(keyPattern.matches(key) && width in 1..8192 && height in 1..8192) { "Invalid asset reference." } }
 }
-internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int)
+/** Explicit pixel demand. Compose modifiers do not automatically change this value. */
+data class AssetPixelSize(val width: Int, val height: Int) {
+    init { require(width in 1..8192 && height in 1..8192) { "Target pixel dimensions must be in 1..8192." } }
+}
+/** Metadata returned by a successful bounded raster decode, not the source upload format. */
+data class AssetImageInfo(val mime: String, val width: Int, val height: Int)
+internal data class Candidate(val hash: String, val url: String, val bytes: Int, val mime: String = "image/webp", val width: Int? = null, val height: Int? = null)
+internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int, val renditions: List<Candidate> = emptyList())
 internal data class Release(val sequence: Long, val payload: String, val envelope: JsonObject, val slots: List<Slot>)
+
+internal val nativeFormats = listOf("image/webp", "image/png")
+internal fun validateFormats(formats: List<String>) {
+    require(formats.isNotEmpty() && formats.size == formats.distinct().size && formats.all { it in nativeFormats } && "image/webp" in formats) {
+        "Native formats must be a unique list of WebP and/or PNG including WebP; native SVG rendering is unsupported."
+    }
+}
+internal fun candidates(slot: Slot, target: AssetPixelSize, formats: List<String>): List<Candidate> {
+    validateFormats(formats)
+    val ordered = slot.renditions.filter { it.mime in formats }.sortedWith(
+        compareBy<Candidate> { if(it.width!! >= target.width && it.height!! >= target.height) 0 else 1 }
+            .thenBy { val area = it.width!!.toLong() * it.height!!; if(it.width >= target.width && it.height >= target.height) area else -area }
+            .thenBy { it.bytes }.thenBy { it.hash }
+    )
+    // Legacy is intentionally not deduplicated by hash: its decoding contract is different.
+    return ordered + Candidate(slot.hash, slot.url, slot.bytes)
+}
+internal fun scopedAssetUrl(raw: String, base: URI, expectedPath: String): String {
+    val u = base.resolve(raw)
+    fun port(x: URI) = if (x.port == -1) 443 else x.port
+    require(u.scheme == "https" && u.host.equals(base.host,true) && port(u) == port(base) && u.rawUserInfo == null && u.rawQuery == null && u.rawFragment == null && u.rawPath == expectedPath) { "Asset URL is outside the configured app." }
+    return u.toASCIIString()
+}
 
 internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
     require(o.string("algorithm") == "Ed25519" && o.string("publicKey") == config.pinnedPublicKey && o.string("keyId") == config.keyId) { "Invalid signed manifest envelope." }
@@ -90,6 +123,8 @@ internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
     require(Base64.getEncoder().encodeToString(sig) == signature && Ed25519.validatePublicKeyFull(sig.copyOfRange(0,32),0) && Ed25519.verify(sig,0,keyBytes(config.pinnedPublicKey),0,bytes,0,bytes.size)) { "Manifest signature verification failed." }
     val p = objectJson(text,Limits.MANIFEST_BYTES)
     p.number("schemaVersion",1,1)
+    val hasRenditionSchema = "renditionSchemaVersion" in p
+    if(hasRenditionSchema) p.number("renditionSchemaVersion",1,1)
     require(p.string("orgId") == config.orgId && p.string("appId") == config.appId && p.string("environment") == config.environment) { "Unsupported or cross-app manifest." }
     val seq = p.number("sequence",1,Int.MAX_VALUE.toLong())
     Instant.parse(p.string("createdAt"))
@@ -104,10 +139,27 @@ internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
         val id = s.string("assetId"); val hash = s.string("sha256")
         require(uuidPattern.matches(id) && hashPattern.matches(hash) && s.string("mime") == "image/webp") { "Invalid asset metadata." }
         val size = s.number("bytes",1,Limits.ASSET_BYTES.toLong()).toInt()
-        val u = base.resolve(s.string("url"))
-        fun port(x: URI) = if (x.port == -1) 443 else x.port
-        require(u.scheme == "https" && u.host.equals(base.host,true) && port(u) == port(base) && u.rawUserInfo == null && u.rawQuery == null && u.rawFragment == null && u.rawPath == "/api/delivery/${config.orgId}/${config.appId}/assets/$id") { "Asset URL is outside the configured app." }
-        Slot(key,w,h,id,hash,u.toASCIIString(),size)
+        val assetPath = "/api/delivery/${config.orgId}/${config.appId}/assets/$id"
+        val url = scopedAssetUrl(s.string("url"),base,assetPath)
+        val renditions = if("renditions" in s) {
+            require(hasRenditionSchema) { "Renditions require renditionSchemaVersion 1." }
+            val entries = s["renditions"] as? JsonArray ?: error("Invalid renditions array.")
+            require(entries.size in 1..7) { "A rendition array must contain 1 through 7 entries." }
+            val hashes = mutableSetOf<String>()
+            entries.map { entry ->
+                val r = entry as? JsonObject ?: error("Invalid rendition.")
+                val renditionHash = r.string("sha256")
+                require(hashPattern.matches(renditionHash) && hashes.add(renditionHash)) { "Invalid or duplicate rendition hash." }
+                val mime = r.string("mime")
+                require(mime in nativeFormats || mime == "image/svg+xml") { "Unsupported rendition format." }
+                val rw = r.number("width",1,8192).toInt(); val rh = r.number("height",1,8192).toInt()
+                require(rw.toLong()*rh <= Limits.DECODED_PIXELS && abs(rw.toDouble()/rh - w.toDouble()/h)/(w.toDouble()/h) <= .02) { "Rendition dimensions or aspect ratio are invalid." }
+                val count = r.number("bytes",1,if(mime == "image/svg+xml") Limits.SVG_BYTES.toLong() else Limits.ASSET_BYTES.toLong()).toInt()
+                val renditionUrl = scopedAssetUrl(r.string("url"),base,"$assetPath/renditions/$renditionHash")
+                Candidate(renditionHash,renditionUrl,count,mime,rw,rh)
+            }
+        } else emptyList()
+        Slot(key,w,h,id,hash,url,size,renditions)
     }
     return Release(seq,text,o,slots)
 }
