@@ -245,17 +245,17 @@ class VariantTest {
         }
     }
 
-    @Test fun cancellationFromDecisionPropagatesWithoutAssetRequests() = runBlocking {
+    @Test fun cancellationThrownByDecisionIsInvalidWithoutCancellingCaller() = runBlocking {
         val dir = Files.createTempDirectory("assetlib-decision-cancel").toFile()
         try {
             val delivery = Delivery(bytes("manifests/valid-cells-arm-appearance-seq6.json"))
             val client = fixtureClient(config(), storage(dir), delivery) { _, _ -> throw CancellationException("Decision cancelled") }
             assertNull(client.refresh().error)
-            val failed = runCatching { client.resolve(ref, appearance = AssetAppearance.DARK) }.exceptionOrNull()
-            assertTrue(failed is CancellationException)
-            assertEquals("Decision cancelled", failed?.message)
-            assertTrue(delivery.requests.all { it.endsWith("/manifest") })
-            assertEquals(AssetSource.REMOTE, client.resolve(ref, arm = "b").source)
+            val result = client.resolve(ref, appearance = AssetAppearance.DARK)
+            assertEquals(AssetArmSource.INVALID_DECISION, result.armSource)
+            assertNull(result.arm); assertEquals(ridgeId, result.assetId)
+            assertTrue(result.message.contains("callback threw"))
+            assertEquals(AssetSource.CACHE, client.resolve(ref, arm = "b").source)
         } finally { dir.deleteRecursively() }
     }
 

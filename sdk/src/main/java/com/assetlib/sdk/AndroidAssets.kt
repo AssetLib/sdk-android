@@ -10,8 +10,14 @@ import kotlinx.coroutines.withContext
 object AndroidAssets {
     /** App-private, non-backed-up release state; disposable, bounded artwork cache. */
     fun client(context: Context, config: PublicConfig,
+               decisionTimeoutMillis: Long = 1500,
                decide: (suspend (key: String, arms: List<String>) -> String?)? = null): AssetClient = AssetClient(config,
-        FileAssetStorage(File(context.noBackupFilesDir,"assetlib"),File(context.cacheDir,"assetlib"),config),decide=decide)
+        FileAssetStorage(File(context.noBackupFilesDir,"assetlib"),File(context.cacheDir,"assetlib"),config),
+        decisionTimeoutMillis=decisionTimeoutMillis,decide=decide)
+    /** Preserve the original positional decision callback. */
+    fun client(context: Context, config: PublicConfig,
+               decide: (suspend (key: String, arms: List<String>) -> String?)?): AssetClient =
+        client(context,config,decisionTimeoutMillis=1500,decide=decide)
     internal fun inspectImage(bytes: ByteArray): AssetImageInfo? {
         if(bytes.isEmpty() || bytes.size > Limits.ASSET_BYTES) return null
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }

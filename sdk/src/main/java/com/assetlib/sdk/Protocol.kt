@@ -6,6 +6,8 @@ import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
+import java.util.Collections
+import java.util.Locale
 import kotlin.math.abs
 import kotlinx.serialization.json.*
 import org.bouncycastle.math.ec.rfc8032.Ed25519
@@ -50,12 +52,32 @@ internal fun keyBytes(pem: String): ByteArray {
 }
 
 @ConsistentCopyVisibility
-data class PublicConfig private constructor(val orgId: String, val appId: String, val manifestUrl: String, val pinnedPublicKey: String, val keyId: String, val environment: String) {
+data class PublicConfig private constructor(val orgId: String, val appId: String, val manifestUrl: String, val pinnedPublicKey: String, val keyId: String, val environment: String,
+                                          val pinnedPublicKeys: List<String>) {
     val schemaVersion = 1
-    val namespace: String get() = sha256("$manifestUrl\n$pinnedPublicKey".toByteArray())
+    private val manifestOrigin: String get() {
+        val uri = URI(manifestUrl)
+        return "https://${uri.host.lowercase(Locale.ROOT)}" + if(uri.port == -1 || uri.port == 443) "" else ":${uri.port}"
+    }
+    val namespace: String get() = sha256("$manifestOrigin\n$orgId\n$appId\n$environment".toByteArray())
+    /** Only the previously shipped full-URL/single-key formula is eligible for migration. */
+    internal val legacyNamespaces: List<String> get() {
+        val uri = URI(manifestUrl)
+        val origins = listOf("https://${uri.rawAuthority}",manifestOrigin).distinct()
+        val deliveryPath = "/api/delivery/$orgId/$appId"
+        val urls = listOf(manifestUrl) + origins.flatMap { origin ->
+            listOf("$origin$deliveryPath/environments/$environment/manifest") +
+                if(environment == "production") listOf("$origin$deliveryPath/manifest") else emptyList()
+        }
+        return urls.distinct().flatMap { url -> pinnedPublicKeys.map { pem -> sha256("$url\n$pem".toByteArray()) } }.distinct()
+    }
     fun toJson(): String = buildJsonObject {
         put("schemaVersion",1); put("orgId",orgId); put("appId",appId); put("environment",environment)
         put("manifestUrl",manifestUrl); put("pinnedPublicKey",pinnedPublicKey); put("keyId",keyId)
+        if(pinnedPublicKeys.size > 1) {
+            put("pinnedPublicKeys",JsonArray(pinnedPublicKeys.map(::JsonPrimitive)))
+            put("keyIds",JsonArray(pinnedPublicKeys.map { JsonPrimitive(sha256(it.toByteArray()).take(16)) }))
+        }
     }.toString()
     companion object {
         fun parse(text: String): PublicConfig {
@@ -70,10 +92,19 @@ data class PublicConfig private constructor(val orgId: String, val appId: String
             val deliveryPath = "/api/delivery/$org/$app"
             require(uri.rawPath == "$deliveryPath/environments/$environment/manifest" ||
                 (environment == "production" && uri.rawPath == "$deliveryPath/manifest")) { "Manifest URL does not match this app and environment." }
-            val pem = o.string("pinnedPublicKey"); keyBytes(pem)
+            val single = if("pinnedPublicKey" in o) o.string("pinnedPublicKey") else null
+            val keys = if("pinnedPublicKeys" in o) {
+                val entries = o["pinnedPublicKeys"] as? JsonArray ?: error("Invalid pinned public key set.")
+                require(entries.isNotEmpty()) { "A pinned public key set cannot be empty." }
+                entries.map { (it as? JsonPrimitive)?.takeIf { value -> value.isString }?.content ?: error("Invalid pinned public key.") }
+            } else listOf(single ?: error("A pinned public key or key set is required."))
+            keys.forEach(::keyBytes)
+            require(single == null || single in keys) { "The single pinned public key must belong to the pinned key set." }
+            val pem = single ?: keys.first()
             val keyId = sha256(pem.toByteArray()).take(16)
             require(o["keyId"] == null || o.string("keyId") == keyId) { "Signing key ID does not match." }
-            return PublicConfig(org,app,uri.toASCIIString(),pem,keyId,environment)
+            if("keyIds" in o) require(o["keyIds"] == JsonArray(keys.map { JsonPrimitive(sha256(it.toByteArray()).take(16)) })) { "Signing key IDs do not match the pinned key set." }
+            return PublicConfig(org,app,uri.toASCIIString(),pem,keyId,environment,Collections.unmodifiableList(ArrayList(keys)))
         }
     }
 }
@@ -197,13 +228,14 @@ private fun parseCells(s: JsonObject, slot: Slot, variants: Variants?, config: P
 }
 
 internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
-    require(o.string("algorithm") == "Ed25519" && o.string("publicKey") == config.pinnedPublicKey && o.string("keyId") == config.keyId) { "Invalid signed manifest envelope." }
+    val pem = o.string("publicKey")
+    require(o.string("algorithm") == "Ed25519" && pem in config.pinnedPublicKeys && o.string("keyId") == sha256(pem.toByteArray()).take(16)) { "Invalid signed manifest envelope." }
     val text = o.string("payload"); val bytes = text.toByteArray()
     require(bytes.size <= Limits.MANIFEST_BYTES) { "Manifest payload exceeds its bound." }
     val signature = o.string("signature")
     require(Regex("[A-Za-z0-9+/]{86}==").matches(signature)) { "Invalid signature encoding." }
     val sig = Base64.getDecoder().decode(signature)
-    require(Base64.getEncoder().encodeToString(sig) == signature && Ed25519.validatePublicKeyFull(sig.copyOfRange(0,32),0) && Ed25519.verify(sig,0,keyBytes(config.pinnedPublicKey),0,bytes,0,bytes.size)) { "Manifest signature verification failed." }
+    require(Base64.getEncoder().encodeToString(sig) == signature && Ed25519.validatePublicKeyFull(sig.copyOfRange(0,32),0) && Ed25519.verify(sig,0,keyBytes(pem),0,bytes,0,bytes.size)) { "Manifest signature verification failed." }
     val p = objectJson(text,Limits.MANIFEST_BYTES)
     p.number("schemaVersion",1,1)
     val hasRenditionSchema = "renditionSchemaVersion" in p

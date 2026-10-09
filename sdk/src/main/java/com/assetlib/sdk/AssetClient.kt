@@ -3,12 +3,18 @@ package com.assetlib.sdk
 import java.util.Collections
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AssetSource { BUNDLE, CACHE, REMOTE }
 enum class AssetArmSource(val wireValue: String) {
@@ -25,10 +31,17 @@ data class RefreshResult(val updated: Boolean, val sequence: Long, val error: St
 
 class AssetClient(config: PublicConfig, private val storage: AssetStorage, private val transport: AssetTransport = HttpsTransport(),
                   private val decodeImage: (ByteArray) -> AssetImageInfo? = AndroidAssets::inspectImage,
+                  private val decisionTimeoutMillis: Long = 1500,
                   private val decide: (suspend (key: String, arms: List<String>) -> String?)? = null) {
     /** Preserve callers that provide the raster decoder as a trailing lambda. */
     constructor(config: PublicConfig, storage: AssetStorage, transport: AssetTransport = HttpsTransport(),
-                decodeImage: (ByteArray) -> AssetImageInfo?) : this(config,storage,transport,decodeImage,null)
+                decodeImage: (ByteArray) -> AssetImageInfo?) : this(config,storage,transport,decodeImage,1500,null)
+    /** Preserve the original positional decoder + decision constructor. */
+    constructor(config: PublicConfig, storage: AssetStorage, transport: AssetTransport,
+                decodeImage: (ByteArray) -> AssetImageInfo?,
+                decide: (suspend (key: String, arms: List<String>) -> String?)?) : this(config,storage,transport,decodeImage,1500,decide)
+
+    init { require(decisionTimeoutMillis in 100..10_000) { "Decision timeout must be between 100 and 10000 milliseconds." } }
 
     val config = PublicConfig.parse(config.toJson())
     private val mutex = Mutex()
@@ -88,13 +101,23 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
         val arms = slot?.variants?.arm.orEmpty()
         val callback = decide
         if(arms.isEmpty() || callback == null) return ArmDecision(source=AssetArmSource.CONTROL)
+        // A detached job bounds the wait even when app code ignores cancellation. Never join it.
+        val job = SupervisorJob()
+        val pending = CoroutineScope(Dispatchers.Default + job).async {
+            try {
+                val selected = callback(ref.key,Collections.unmodifiableList(ArrayList(arms)))
+                if(selected != null) ArmDecision(selected,AssetArmSource.DECISION)
+                else ArmDecision(source=AssetArmSource.INVALID_DECISION,reason="Decision returned no arm; using control.")
+            } catch(_: Exception) {
+                ArmDecision(source=AssetArmSource.INVALID_DECISION,reason="Decision callback threw; using control.")
+            }
+        }
         return try {
-            val selected = callback(ref.key,Collections.unmodifiableList(ArrayList(arms)))
-            if(selected != null && selected in arms) ArmDecision(selected,AssetArmSource.DECISION)
-            else ArmDecision(source=AssetArmSource.INVALID_DECISION,reason=if(selected == null) "Decision returned no arm; using control." else "Decision returned an undeclared arm; using control.")
-        } catch(e: Exception) {
-            if(e is CancellationException) throw e
-            ArmDecision(source=AssetArmSource.INVALID_DECISION,reason="Decision callback threw; using control.")
+            val result = withTimeoutOrNull(decisionTimeoutMillis) { pending.await() }
+            currentCoroutineContext().ensureActive() // Caller cancellation is not an invalid decision.
+            result ?: ArmDecision(source=AssetArmSource.INVALID_DECISION,reason="Decision callback timed out; using control.")
+        } finally {
+            job.cancel()
         }
     }
     /** Explicit arm overrides the decision callback; omitted coordinates select control/any. */
@@ -102,13 +125,25 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
                         appearance: AssetAppearance? = null, arm: String? = null,
                         supportedFormats: List<String> = nativeFormats): ResolvedAsset = withContext(Dispatchers.IO) {
         validateFormats(supportedFormats)
-        val (snapshot, failure) = mutex.withLock { syncState(); state to storageFailure }
         fun matches(slot: Slot) = slot.key == ref.key && slot.width == ref.width && slot.height == ref.height
+        val decisionSlot = mutex.withLock { syncState(); state.history.firstOrNull()?.slots?.find(::matches) }
         // User code may suspend or call this client again, so never invoke it under the mutex.
-        val decision = decideArm(ref,snapshot.history.firstOrNull()?.slots?.find(::matches),arm)
+        val evaluated = decideArm(ref,decisionSlot,arm)
         mutex.withLock {
-            var reason = failure ?: "No compatible published artwork is available."
-            snapshot.history.forEachIndexed { index, release ->
+            syncState()
+            storageFailure?.let { failure ->
+                return@withLock ResolvedAsset(AssetSource.BUNDLE,null,evaluated.message("Using bundled artwork. $failure"),
+                    accessibility=ref.bundledAccessibility,armSource=evaluated.source)
+            }
+            // Validate against the accepted release now, before selecting even a retained image.
+            val currentArms = state.history.firstOrNull()?.slots?.find(::matches)?.variants?.arm.orEmpty()
+            val decision = if(evaluated.arm != null && evaluated.arm !in currentArms) {
+                if(evaluated.source == AssetArmSource.DECISION)
+                    ArmDecision(source=AssetArmSource.INVALID_DECISION,reason="Decision returned an undeclared arm; using control.")
+                else evaluated.copy(arm=null)
+            } else evaluated
+            var reason = "No compatible published artwork is available."
+            state.history.forEachIndexed { index, release ->
                 val placement = release.slots.find(::matches) ?: return@forEachIndexed
                 fun cell(selectedArm: String?, selectedAppearance: AssetAppearance?) =
                     placement.cells.find { it.arm == selectedArm && it.appearance == selectedAppearance }
