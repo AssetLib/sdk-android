@@ -1,14 +1,15 @@
-# Verification — 2026-10-09: 0.3.1-preview.1 source patch
+# Verification — October 9, 2026: release v0.3.1-preview.1
 
-Uncommitted local source evidence; no release or publication:
+Release `v0.3.1-preview.1` (tag on commit `a7f40eb`), AAR SHA-256 `d3f725c1270987ae06da4f5f9cf0673e165f2b2fd7449537adfff367460a1bc3`:
 
-- `node --test scripts/codegen.test.mjs`: 2 passed, 0 failed, 0 skipped.
-- `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease`: exit 1 before compilation because the sandbox refused the wrapper lock in the default Gradle home (`Operation not permitted`). A retry using a writable copy of the cached Gradle home and `--offline --no-daemon` reached Gradle initialization, then failed creating `FileLockContentionHandler` with `java.net.SocketException: Operation not permitted`. No Gradle unit-test, lint, or release-AAR result is established for this patch.
-- `python3 assetlib-decision1-android-check.py` (temporary driver outside the repository): supplemental direct Kotlin 2.2.20/Zulu JDK 17.0.13 compilation of every main and JVM test source against Android 36 and the declared dependency versions succeeded. The JUnit 4.13.2 runner reported `Tests run: 98, passed: 97, failed: 0, skipped by assumption: 1, ignored: 0`. The skip is the optional `hostedReadOnlySmoke` test, with no hosted configuration supplied. This is supplemental compiler/JUnit evidence, not a Gradle or lint pass.
-- The new parameterized runner checks all 43 public-config cases and all 39 pinned-envelope expectations. A separate regression covers three exactly-4096-byte configurations with long valid PEM formatting, including set-only and explicit non-first single-pin configurations. That serialization regression failed before the fix and passed afterward.
-- `diff -r ../../native-contract/fixtures sdk/src/test/resources/fixtures`: exit 0; all 180 generated corpus files are byte-identical. `git diff --check`: exit 0.
+- `node --test scripts/codegen.test.mjs`: 2 passed.
+- `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease`: exit 0. JVM unit tests: 98 run, 0 failures, 1 skipped (the optional hosted test, without `ASSETLIB_PUBLIC_CONFIG_FILE`). Lint clean. The new parameterized runner checks all 43 shared public-config cases and 39 pinned-envelope expectations; a regression covers exactly-4096-byte configurations, including set-only and explicit non-first single-pin forms.
+- `node scripts/prepare-release.mjs` produced the AAR and `SHA256SUMS` attached to the release; `shasum -a 256 -c SHA256SUMS` passed.
+- `./gradlew :sdk:connectedDebugAndroidTest` on an Android 16 (API 36) emulator: 5 passed, 0 failed (`AccessibilitySemanticsTest` and the four `AndroidAssetsTest` cases).
+- The fixture directory is byte-identical to the generated shared corpus (180 files).
+- GitHub Actions passed for the release commit.
 
-No emulator, device, hosted-delivery, or CI check was run for this patch. Release packaging was not run against a stale AAR because the current release build could not start. Rerun the Gradle gate and `node scripts/prepare-release.mjs` in an environment that allows Gradle locks and local sockets before tagging or publishing.
+Not established: no emulator or device run of the configuration changes inside a real app, no hosted publish, refresh and rollback with a native app on this version, and no physical device check.
 
 # Verification — October 9, 2026 (America/New_York)
 

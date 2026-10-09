@@ -73,7 +73,7 @@ node scripts/prepare-release.mjs   # copies the release AAR to build/release/ an
 ## Verified vs not verified
 
 - Established for `0.3.0-preview.1` and `0.3.1-preview.1`: the JVM unit tests (one optional hosted test skipped), lint, and the release build against the full corpus, plus green CI on `main` and on the tag.
-- Instrumented runs are recorded for `0.1.0-preview.1`, `0.2.0-preview.1`, `0.2.1-preview.1`, and (on October 9, 2026) the `0.3.0-preview.1` source on `main`, all on Android 36 emulators. `AccessibilitySemanticsTest` was restored to `main` on October 9, 2026 after being dropped when 0.3.0 was cut. No emulator, device, or hosted run exercises the `0.3.0` staging, variant, or decision paths in a real app. Physical devices, API 26 devices, manual TalkBack, and performance have never been established.
+- Instrumented runs are recorded for `0.1.0-preview.1`, `0.2.0-preview.1`, `0.2.1-preview.1`, and (on October 9, 2026) the `0.3.0-preview.1` source and the `v0.3.1-preview.1` release, all on Android 36 emulators. `AccessibilitySemanticsTest` was restored to `main` on October 9, 2026 after being dropped when 0.3.0 was cut. No emulator, device, or hosted run exercises the `0.3.0` staging, variant, or decision paths in a real app. Physical devices, API 26 devices, manual TalkBack, and performance have never been established.
 - Do not claim emulator, device, or hosted acceptance you did not run. When you do run a check, add a dated VERIFICATION.md entry with the exact command and output, and no local absolute paths or configuration contents.
 
 ## Don'ts
