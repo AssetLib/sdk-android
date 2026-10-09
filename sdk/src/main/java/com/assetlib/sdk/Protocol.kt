@@ -50,8 +50,7 @@ internal fun keyBytes(pem: String): ByteArray {
 }
 
 @ConsistentCopyVisibility
-data class PublicConfig private constructor(val orgId: String, val appId: String, val manifestUrl: String, val pinnedPublicKey: String, val keyId: String) {
-    val environment = "production"
+data class PublicConfig private constructor(val orgId: String, val appId: String, val manifestUrl: String, val pinnedPublicKey: String, val keyId: String, val environment: String) {
     val schemaVersion = 1
     val namespace: String get() = sha256("$manifestUrl\n$pinnedPublicKey".toByteArray())
     fun toJson(): String = buildJsonObject {
@@ -62,22 +61,25 @@ data class PublicConfig private constructor(val orgId: String, val appId: String
         fun parse(text: String): PublicConfig {
             val o = objectJson(text, 8192)
             o.number("schemaVersion",1,1)
-            require(o.string("environment") == "production") { "Unsupported environment." }
+            val environment = o.string("environment")
+            require(environment == "staging" || environment == "production") { "Unsupported environment." }
             val org = o.string("orgId"); val app = o.string("appId")
             require(uuidPattern.matches(org) && uuidPattern.matches(app)) { "Invalid app identity." }
             val uri = URI(o.string("manifestUrl"))
             require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null && (uri.port == -1 || uri.port in 1..65535)) { "Assetlib requires an HTTPS URL without credentials, query, or fragment." }
-            require(uri.rawPath == "/api/delivery/$org/$app/manifest") { "Manifest URL does not match this app." }
+            val deliveryPath = "/api/delivery/$org/$app"
+            require(uri.rawPath == "$deliveryPath/environments/$environment/manifest" ||
+                (environment == "production" && uri.rawPath == "$deliveryPath/manifest")) { "Manifest URL does not match this app and environment." }
             val pem = o.string("pinnedPublicKey"); keyBytes(pem)
             val keyId = sha256(pem.toByteArray()).take(16)
             require(o["keyId"] == null || o.string("keyId") == keyId) { "Signing key ID does not match." }
-            return PublicConfig(org,app,uri.toASCIIString(),pem,keyId)
+            return PublicConfig(org,app,uri.toASCIIString(),pem,keyId,environment)
         }
     }
 }
 
 /** Generate these from a checked-in catalog; layout remains owned by your app. */
-data class AssetRef(val key: String, val width: Int, val height: Int) {
+data class AssetRef(val key: String, val width: Int, val height: Int, val bundledAccessibility: AssetAccessibility? = null) {
     init { require(keyPattern.matches(key) && width in 1..8192 && height in 1..8192) { "Invalid asset reference." } }
 }
 /** Explicit pixel demand. Compose modifiers do not automatically change this value. */
@@ -86,8 +88,13 @@ data class AssetPixelSize(val width: Int, val height: Int) {
 }
 /** Metadata returned by a successful bounded raster decode, not the source upload format. */
 data class AssetImageInfo(val mime: String, val width: Int, val height: Int)
+/** The app supplies appearance explicitly; the SDK does not read device or Compose state. */
+enum class AssetAppearance(val wireValue: String) { LIGHT("light"), DARK("dark") }
 internal data class Candidate(val hash: String, val url: String, val bytes: Int, val mime: String = "image/webp", val width: Int? = null, val height: Int? = null)
-internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int, val renditions: List<Candidate> = emptyList())
+internal data class Variants(val appearance: List<AssetAppearance> = emptyList(), val arm: List<String> = emptyList())
+internal data class Cell(val appearance: AssetAppearance?, val arm: String?, val image: Slot)
+internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int, val renditions: List<Candidate> = emptyList(), val accessibility: AssetAccessibility? = null,
+                         val variants: Variants? = null, val cells: List<Cell> = emptyList())
 internal data class Release(val sequence: Long, val payload: String, val envelope: JsonObject, val slots: List<Slot>)
 
 internal val nativeFormats = listOf("image/webp", "image/png")
@@ -113,6 +120,82 @@ internal fun scopedAssetUrl(raw: String, base: URI, expectedPath: String): Strin
     return u.toASCIIString()
 }
 
+// Slot artwork and cell artwork share the same validation, including accessibility and renditions.
+private fun parseImage(s: JsonObject, key: String, w: Int, h: Int, config: PublicConfig, hasRenditionSchema: Boolean): Slot {
+    val id = s.string("assetId"); val hash = s.string("sha256")
+    require(uuidPattern.matches(id) && hashPattern.matches(hash) && s.string("mime") == "image/webp") { "Invalid asset metadata." }
+    val size = s.number("bytes",1,Limits.ASSET_BYTES.toLong()).toInt()
+    val base = URI(config.manifestUrl)
+    val assetPath = "/api/delivery/${config.orgId}/${config.appId}/assets/$id"
+    val url = scopedAssetUrl(s.string("url"),base,assetPath)
+    val renditions = if("renditions" in s) {
+        require(hasRenditionSchema) { "Renditions require renditionSchemaVersion 1." }
+        val entries = s["renditions"] as? JsonArray ?: error("Invalid renditions array.")
+        require(entries.size in 1..7) { "A rendition array must contain 1 through 7 entries." }
+        val hashes = mutableSetOf<String>()
+        entries.map { entry ->
+            val r = entry as? JsonObject ?: error("Invalid rendition.")
+            val renditionHash = r.string("sha256")
+            require(hashPattern.matches(renditionHash) && hashes.add(renditionHash)) { "Invalid or duplicate rendition hash." }
+            val mime = r.string("mime")
+            require(mime in nativeFormats || mime == "image/svg+xml") { "Unsupported rendition format." }
+            val rw = r.number("width",1,8192).toInt(); val rh = r.number("height",1,8192).toInt()
+            require(rw.toLong()*rh <= Limits.DECODED_PIXELS && abs(rw.toDouble()/rh - w.toDouble()/h)/(w.toDouble()/h) <= .02) { "Rendition dimensions or aspect ratio are invalid." }
+            val count = r.number("bytes",1,if(mime == "image/svg+xml") Limits.SVG_BYTES.toLong() else Limits.ASSET_BYTES.toLong()).toInt()
+            val renditionUrl = scopedAssetUrl(r.string("url"),base,"$assetPath/renditions/$renditionHash")
+            Candidate(renditionHash,renditionUrl,count,mime,rw,rh)
+        }
+    } else emptyList()
+    val accessibility = s["accessibility"]?.let(::parseAccessibility)
+    return Slot(key,w,h,id,hash,url,size,renditions,accessibility)
+}
+
+private fun parseAppearance(value: String): AssetAppearance = AssetAppearance.entries.firstOrNull { it.wireValue == value }
+    ?: error("Invalid appearance variant.")
+
+private fun parseVariants(s: JsonObject, hasVariantSchema: Boolean): Variants? {
+    if("variants" !in s) {
+        require("cells" !in s) { "Variant cells require declared variants." }
+        return null
+    }
+    require(hasVariantSchema) { "Variants require variantSchemaVersion 1." }
+    val variants = s["variants"] as? JsonObject ?: error("Invalid variant axes.")
+    require(variants.isNotEmpty() && variants.keys.all { it == "appearance" || it == "arm" }) { "Invalid variant axes." }
+    fun axis(name: String, maximum: Int): List<String> {
+        if(name !in variants) return emptyList()
+        val entries = variants[name] as? JsonArray ?: error("Invalid $name variants.")
+        require(entries.size in 1..maximum) { "Invalid $name variant count." }
+        val values = entries.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: error("Invalid $name variant.") }
+        require(values.distinct().size == values.size) { "Duplicate $name variants." }
+        return values
+    }
+    val appearance = axis("appearance",2).map(::parseAppearance)
+    val arm = axis("arm",4)
+    val armPattern = Regex("[a-z][a-z0-9_-]{0,19}")
+    val reservedArms = setOf("control", "any", "constructor", "prototype", "__proto__")
+    require(arm.all { armPattern.matches(it) && it !in reservedArms }) { "Invalid arm variant." }
+    return Variants(appearance,arm)
+}
+
+private fun parseCells(s: JsonObject, slot: Slot, variants: Variants?, config: PublicConfig, hasRenditionSchema: Boolean): List<Cell> {
+    if("cells" !in s) return emptyList()
+    require(variants != null) { "Variant cells require declared variants." }
+    val cells = s["cells"] as? JsonArray ?: error("Invalid variant cells.")
+    require(cells.size <= (variants.arm.size + 1) * (variants.appearance.size + 1) - 1) { "Invalid variant cell count." }
+    val coordinates = mutableSetOf<Pair<String?,AssetAppearance?>>()
+    return cells.map { value ->
+        val cell = value as? JsonObject ?: error("Invalid variant cell.")
+        require("arm" in cell || "appearance" in cell) { "Variant cells require an arm or appearance coordinate." }
+        val appearance = if("appearance" in cell) parseAppearance(cell.string("appearance")) else null
+        val arm = if("arm" in cell) cell.string("arm") else null
+        require((appearance == null || appearance in variants.appearance) && (arm == null || arm in variants.arm)) { "Variant cell coordinates must be declared." }
+        require(coordinates.add(arm to appearance)) { "Duplicate variant cell coordinates." }
+        require("defaultState" !in cell) { "Variant cells use the placement default state." }
+        // Native clients deliberately ignore slot and cell states, including their image descriptors.
+        Cell(appearance,arm,parseImage(cell,slot.key,slot.width,slot.height,config,hasRenditionSchema))
+    }
+}
+
 internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
     require(o.string("algorithm") == "Ed25519" && o.string("publicKey") == config.pinnedPublicKey && o.string("keyId") == config.keyId) { "Invalid signed manifest envelope." }
     val text = o.string("payload"); val bytes = text.toByteArray()
@@ -125,41 +208,22 @@ internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
     p.number("schemaVersion",1,1)
     val hasRenditionSchema = "renditionSchemaVersion" in p
     if(hasRenditionSchema) p.number("renditionSchemaVersion",1,1)
+    val hasVariantSchema = "variantSchemaVersion" in p
+    if(hasVariantSchema) p.number("variantSchemaVersion",1,1)
     require(p.string("orgId") == config.orgId && p.string("appId") == config.appId && p.string("environment") == config.environment) { "Unsupported or cross-app manifest." }
     val seq = p.number("sequence",1,Int.MAX_VALUE.toLong())
     Instant.parse(p.string("createdAt"))
     val list = p["slots"] as? JsonArray ?: error("Invalid placements.")
     require(list.size in 1..100) { "Invalid placement count." }
-    val base = URI(config.manifestUrl); val seen = mutableSetOf<String>()
+    val seen = mutableSetOf<String>()
     val slots = list.map { value ->
         val s = value as? JsonObject ?: error("Invalid placement.")
         val key = s.string("key"); require(keyPattern.matches(key) && seen.add(key)) { "Invalid or duplicate placement." }
         require(s.string("screen").length <= 120) { "Invalid screen." }
         val w = s.number("width",1,8192).toInt(); val h = s.number("height",1,8192).toInt()
-        val id = s.string("assetId"); val hash = s.string("sha256")
-        require(uuidPattern.matches(id) && hashPattern.matches(hash) && s.string("mime") == "image/webp") { "Invalid asset metadata." }
-        val size = s.number("bytes",1,Limits.ASSET_BYTES.toLong()).toInt()
-        val assetPath = "/api/delivery/${config.orgId}/${config.appId}/assets/$id"
-        val url = scopedAssetUrl(s.string("url"),base,assetPath)
-        val renditions = if("renditions" in s) {
-            require(hasRenditionSchema) { "Renditions require renditionSchemaVersion 1." }
-            val entries = s["renditions"] as? JsonArray ?: error("Invalid renditions array.")
-            require(entries.size in 1..7) { "A rendition array must contain 1 through 7 entries." }
-            val hashes = mutableSetOf<String>()
-            entries.map { entry ->
-                val r = entry as? JsonObject ?: error("Invalid rendition.")
-                val renditionHash = r.string("sha256")
-                require(hashPattern.matches(renditionHash) && hashes.add(renditionHash)) { "Invalid or duplicate rendition hash." }
-                val mime = r.string("mime")
-                require(mime in nativeFormats || mime == "image/svg+xml") { "Unsupported rendition format." }
-                val rw = r.number("width",1,8192).toInt(); val rh = r.number("height",1,8192).toInt()
-                require(rw.toLong()*rh <= Limits.DECODED_PIXELS && abs(rw.toDouble()/rh - w.toDouble()/h)/(w.toDouble()/h) <= .02) { "Rendition dimensions or aspect ratio are invalid." }
-                val count = r.number("bytes",1,if(mime == "image/svg+xml") Limits.SVG_BYTES.toLong() else Limits.ASSET_BYTES.toLong()).toInt()
-                val renditionUrl = scopedAssetUrl(r.string("url"),base,"$assetPath/renditions/$renditionHash")
-                Candidate(renditionHash,renditionUrl,count,mime,rw,rh)
-            }
-        } else emptyList()
-        Slot(key,w,h,id,hash,url,size,renditions)
+        val slot = parseImage(s,key,w,h,config,hasRenditionSchema)
+        val variants = parseVariants(s,hasVariantSchema)
+        slot.copy(variants=variants,cells=parseCells(s,slot,variants,config,hasRenditionSchema))
     }
     return Release(seq,text,o,slots)
 }

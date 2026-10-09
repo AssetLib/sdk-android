@@ -22,13 +22,76 @@ class AssetClientTest {
         override fun get(url: String,maxBytes: Int): ByteArray { requests.add(url); check(!offline) { "Offline test." }; return if(url.endsWith("/manifest")) manifest else asset }
     }
     @Test fun sharedInteropCorpus() {
-        val cases=objectJson(text("cases.json"),100000)["manifests"]!!.jsonArray
+        val index=objectJson(text("cases.json"),100000)
+        val cases=index["manifests"]!!.jsonArray
         for(value in cases) {
             val c=value.jsonObject; val name=c.string("file")
-            val result=runCatching { verifyEnvelope(envelope(name),config()) }
+            val configName=c["config"]?.jsonPrimitive?.content ?: "production"
+            val caseConfig=PublicConfig.parse(text(index["configs"]!!.jsonObject.string(configName)))
+            val result=runCatching { verifyEnvelope(envelope(name),caseConfig) }
             assertEquals("$name: ${result.exceptionOrNull()}",c.string("verification") == "accept",result.isSuccess)
         }
-        assertEquals(65,cases.size)
+        assertEquals(100,cases.size)
+    }
+    @Test fun sharedResolutionCorpus() = runBlocking {
+        val index=objectJson(text("cases.json"),100000)
+        val assets=objectJson(text(index.string("assets")),100000).values.map { it.jsonObject }
+        for(value in index["resolution"]!!.jsonArray) {
+            val case=value.jsonObject; val request=case["request"]!!.jsonObject; val expected=case["expect"]!!.jsonObject
+            val configName=case["config"]?.jsonPrimitive?.content ?: "production"
+            val caseConfig=PublicConfig.parse(text(index["configs"]!!.jsonObject.string(configName)))
+            val dir=Files.createTempDirectory("assetlib-corpus-resolution").toFile()
+            try {
+                val transport=AssetTransport { url,_ ->
+                    if(url == caseConfig.manifestUrl) bytes(case.string("manifest"))
+                    else bytes(assets.single { url.endsWith("/assets/${it.string("assetId")}") }.string("file"))
+                }
+                var decisions=0
+                val decide: (suspend (String,List<String>) -> String?)? = if("decision" in request) {
+                    { key,arms -> decisions++; assertEquals(ref.key,key); assertTrue(arms.isNotEmpty()); request["decision"]!!.jsonPrimitive.contentOrNull }
+                } else null
+                val client=fixtureClient(caseConfig,FileAssetStorage(File(dir,"state"),File(dir,"cache"),caseConfig),transport,decide)
+                assertNull(case.toString(),client.refresh().error)
+                val appearance=request["appearance"]?.jsonPrimitive?.contentOrNull?.let { appearance -> AssetAppearance.entries.single { it.wireValue == appearance } }
+                val resolved=client.resolve(ref,appearance=appearance,arm=request["arm"]?.jsonPrimitive?.contentOrNull)
+                assertEquals(case.toString(),AssetSource.REMOTE,resolved.source)
+                assertEquals(case.toString(),expected.string("assetId"),resolved.assetId)
+                assertEquals(case.toString(),expected["arm"]!!.jsonPrimitive.contentOrNull,resolved.arm)
+                assertEquals(case.toString(),expected["appearance"]!!.jsonPrimitive.contentOrNull,resolved.appearance?.wireValue)
+                assertEquals(case.toString(),expected.string("armSource"),resolved.armSource.wireValue)
+                assertEquals(if("decision" in request) 1 else 0,decisions)
+            } finally { dir.deleteRecursively() }
+        }
+    }
+    @Test fun sharedStatefulAndByteFailureCorpus() = runBlocking {
+        val index=objectJson(text("cases.json"),100000)
+        for(value in index["stateful"]!!.jsonArray) {
+            val case=value.jsonObject
+            val dir=Files.createTempDirectory("assetlib-corpus-state").toFile()
+            try {
+                val disk=storage(dir); val initial=text(case.string("initialState")); disk.saveState(initial)
+                val client=fixtureClient(config(),disk,Transport(bytes(case.string("next")),bytes("assets/coast.webp")))
+                val result=client.refresh()
+                when(case.string("expected")) {
+                    "reject-preserve-sequence-2" -> { assertNotNull(result.error); assertFalse(result.updated); assertEquals(initial,disk.loadState()) }
+                    "idempotent-sequence-2" -> { assertNull(result.error); assertFalse(result.updated); assertEquals(initial,disk.loadState()) }
+                    "accept-sequence-3-coast" -> {
+                        assertNull(result.error); assertTrue(result.updated); assertEquals(3L,result.sequence)
+                        assertArrayEquals(bytes("assets/coast.webp"),client.resolve(ref).bytes)
+                    }
+                    else -> error("Unimplemented corpus outcome: ${case.string("expected")}")
+                }
+                assertEquals(result.sequence,decodeState(disk.loadState()!!,config()).highest)
+            } finally { dir.deleteRecursively() }
+        }
+        for(value in index["byteFailures"]!!.jsonArray) {
+            val case=value.jsonObject; val dir=Files.createTempDirectory("assetlib-corpus-bytes").toFile()
+            try {
+                val client=fixtureClient(config(),storage(dir),Transport(bytes(case.string("manifest")),bytes(case.string("body"))))
+                assertNull(client.refresh().error)
+                assertEquals(case.string("reason"),AssetSource.BUNDLE,client.resolve(ref).source)
+            } finally { dir.deleteRecursively() }
+        }
     }
     @Test fun jsonIntegerSemanticsMatchJavascript() {
         for(value in listOf("1","1.0","1e0")) assertEquals(1L,objectJson("{\"n\":$value}",100).number("n",1,Int.MAX_VALUE.toLong()))

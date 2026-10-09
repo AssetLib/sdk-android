@@ -9,8 +9,9 @@ import kotlinx.coroutines.withContext
 
 object AndroidAssets {
     /** App-private, non-backed-up release state; disposable, bounded artwork cache. */
-    fun client(context: Context, config: PublicConfig): AssetClient = AssetClient(config,
-        FileAssetStorage(File(context.noBackupFilesDir,"assetlib"),File(context.cacheDir,"assetlib"),config))
+    fun client(context: Context, config: PublicConfig,
+               decide: (suspend (key: String, arms: List<String>) -> String?)? = null): AssetClient = AssetClient(config,
+        FileAssetStorage(File(context.noBackupFilesDir,"assetlib"),File(context.cacheDir,"assetlib"),config),decide=decide)
     internal fun inspectImage(bytes: ByteArray): AssetImageInfo? {
         if(bytes.isEmpty() || bytes.size > Limits.ASSET_BYTES) return null
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -22,6 +23,12 @@ object AndroidAssets {
         bitmap.recycle()
         return if(matches) info else null
     }
+    /** Resolve with explicit appearance/arm demand and decode a standard Bitmap. */
+    suspend fun bitmap(client: AssetClient, ref: AssetRef,
+                       targetPixels: AssetPixelSize = AssetPixelSize(ref.width,ref.height),
+                       appearance: AssetAppearance? = null, arm: String? = null,
+                       supportedFormats: List<String> = nativeFormats): Bitmap? =
+        bitmap(client.resolve(ref,targetPixels,appearance,arm,supportedFormats))
     /** A standard Android Bitmap; pass asImageBitmap() to a normal Compose Image. */
     suspend fun bitmap(asset: ResolvedAsset): Bitmap? = withContext(Dispatchers.IO) {
         val bytes = asset.bytes ?: return@withContext null

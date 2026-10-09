@@ -1,8 +1,9 @@
 package com.assetlib.sdk
 
 // JVM protocol tests cannot invoke Android BitmapFactory. Instrumentation tests use the real decoder.
-internal fun fixtureClient(config: PublicConfig, storage: AssetStorage, transport: AssetTransport = HttpsTransport()) =
-    AssetClient(config,storage,transport,::fixtureImageInfo)
+internal fun fixtureClient(config: PublicConfig, storage: AssetStorage, transport: AssetTransport = HttpsTransport(),
+                           decide: (suspend (key: String, arms: List<String>) -> String?)? = null) =
+    AssetClient(config,storage,transport,::fixtureImageInfo,decide)
 internal fun fixtureImageInfo(bytes: ByteArray): AssetImageInfo? {
     fun byte(i: Int) = bytes[i].toInt() and 255
     fun little(i: Int,n: Int): Int = (0 until n).fold(0) { value,j -> value or (byte(i+j) shl (8*j)) }
