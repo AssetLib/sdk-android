@@ -1,6 +1,6 @@
 # Assetlib Android SDK
 
-Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.3.0-preview.1** adds staging configurations, appearance and arm variant cells, an app-supplied arm decision callback, and pinned key sets, alongside the localized artwork descriptions from 0.2.1 and demand-sized PNG/WebP renditions. It remains a developer preview, not a production support commitment.
+Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.3.1-preview.1** standardizes bounded public configuration and signing-key sets across the SDKs. It includes staging configurations, appearance and arm variant cells, an app-supplied arm decision callback, localized artwork descriptions, and demand-sized PNG/WebP renditions. It remains a developer preview, not a production support commitment.
 
 [Console](https://console.assetlib.dev) · [Native travel demo](https://github.com/AssetLib/demo-android) · [JavaScript SDK](https://github.com/AssetLib/sdk-js)
 
@@ -8,10 +8,10 @@ The app owns its screens and bundled fallbacks. Assetlib changes artwork assigne
 
 ## Install the preview
 
-Download `assetlib-android-0.3.0-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.3.0-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
+The `0.3.1-preview.1` patch is prepared in source and has not been tagged or published. After publication, download `assetlib-android-0.3.1-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.3.1-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
 
 ```kotlin
-implementation(files("libs/assetlib-android-0.3.0-preview.1.aar"))
+implementation(files("libs/assetlib-android-0.3.1-preview.1.aar"))
 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 implementation("org.bouncycastle:bcprov-jdk18on:1.86")
@@ -24,7 +24,7 @@ No Maven Central publication is claimed. R8 can shrink the app's dependency set;
 
 Create a workspace in the console and download its **public SDK configuration**. Keep the pinned public key independently in this configuration; do not derive trust from a downloaded manifest. Never put admin credentials in an app.
 
-For key rotation, the public configuration also accepts `pinnedPublicKeys`, a nonempty array of trusted Ed25519 PEM strings, and optional `keyIds` matching that array in order. The existing `pinnedPublicKey` must belong to the set when both fields are supplied. Stored and downloaded releases must verify against this current set, so retain old trusted keys while retained releases still use them. Expanding or reordering the set preserves the storage namespace.
+Supply a single `pinnedPublicKey` or `pinnedPublicKeys` containing 1–16 distinct exact-PEM pins. Each must be Ed25519 SPKI PEM, at most 256 UTF-8 bytes. If both appear, the single pin must belong to the set. Optional `keyId` requires that explicit single pin; optional `keyIds` must match derived IDs in length and order. IDs remain SHA-256 of exact PEM, truncated to 16 hexadecimal characters. Known fields reject explicit nulls. Unknown fields are ignored, but their bytes count toward the 4096-byte UTF-8 JSON limit. For a set-only configuration, the non-optional `pinnedPublicKey` and `keyId` properties expose the first pin and its derived ID. Stored and downloaded releases must verify against this current set, so retain old trusted keys while retained releases still use them. Expanding or reordering the set preserves the storage namespace.
 
 ```kotlin
 val config = PublicConfig.parse(publicConfigJson)
@@ -147,6 +147,6 @@ node --test scripts/codegen.test.mjs
 ASSETLIB_PUBLIC_CONFIG_FILE=/absolute/path/public-config.json ./gradlew :sdk:testDebugUnitTest --rerun-tasks
 ```
 
-The checked-in synthetic interop corpus covers 100 signed cases and 18 variant resolution cases, including staging, UTF-8, key/signature tampering, invalid schema/URLs/renditions/accessibility/variant metadata, and stateful replay/equivocation. JVM tests load each case's configuration and every resolution entry. Unit tests additionally cover decision callbacks, cell selection through cache/restart/historical fallback, staging isolation, target selection, legacy fallback, locale lookup, description pairing across remote/cache/bundle states, concurrent writers, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
+The checked-in synthetic interop corpus covers 43 public-config cases with 39 signature verification expectations, 100 signed manifest cases and 18 variant resolution cases, including staging, UTF-8, key/signature tampering, invalid schema/URLs/renditions/accessibility/variant metadata, and stateful replay/equivocation. JVM tests load each case's configuration and every resolution entry. Unit tests additionally cover decision callbacks, cell selection through cache/restart/historical fallback, staging isolation, target selection, legacy fallback, locale lookup, description pairing across remote/cache/bundle states, concurrent writers, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
 
 Only public artwork should be published to the hosted preview: delivery URLs are publicly retrievable. It is bounded preview infrastructure. See `SECURITY.md` for trust limits.

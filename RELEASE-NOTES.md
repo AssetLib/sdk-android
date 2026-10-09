@@ -3,6 +3,16 @@
 - Restores the instrumented `AccessibilitySemanticsTest`, its debug-only host activity and manifest, and the instrumentation `targetSdk` setting, which were missing from `main` when 0.3.0-preview.1 was tagged. Test-only; release sources are unchanged.
 - The CI artifact is named `assetlib-android-release` instead of carrying a stale version.
 
+# 0.3.1-preview.1 — 2026-10-09 (unreleased)
+
+- Rejects public configuration JSON over 4096 UTF-8 bytes, including unknown fields; the previous limit was 8192 bytes.
+- Rejects duplicate exact-PEM pins and sets outside 1–16 keys. Every pin remains an Ed25519 SPKI PEM of at most 256 UTF-8 bytes.
+- Rejects `keyId` without an explicit `pinnedPublicKey`, including when the ID matches the first set member. Known fields reject explicit nulls; optional `keyIds` must match the pin IDs in length and order. A single pin supplied alongside a set must belong to that set.
+- Runs all 43 generated shared public-config cases and 39 pinned-envelope expectations, including a trusted set member other than the single pin and an untrusted signer. Set-only configurations remain supported.
+- Keeps accepted configurations within the JSON bound when serialized again. Near the limit, `toJson()` omits redundant derived IDs and the duplicate first pin while preserving every ordered trusted pin and any explicit non-first single pin.
+
+No tag, publication, emulator or device acceptance is claimed for this patch. See VERIFICATION.md for local gate evidence.
+
 # 0.3.0-preview.1
 
 - Accepts a `staging` environment in the public configuration with the environment-scoped manifest path.

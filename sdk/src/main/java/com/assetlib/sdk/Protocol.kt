@@ -41,7 +41,7 @@ internal fun JsonObject.number(name: String, min: Long, max: Long): Long {
     return n.toLong()
 }
 internal fun keyBytes(pem: String): ByteArray {
-    require(pem.length <= 256) { "Signing key exceeds the limit." }
+    require(pem.toByteArray(Charsets.UTF_8).size <= 256) { "Signing key exceeds the 256-byte limit." }
     val m = Regex("-----BEGIN PUBLIC KEY-----\\r?\\n([A-Za-z0-9+/=\\r\\n]+)-----END PUBLIC KEY-----\\r?\\n?").matchEntire(pem) ?: error("Expected an Ed25519 SPKI PEM public key.")
     val b64 = m.groupValues[1].replace("\r", "").replace("\n", "")
     val der = Base64.getDecoder().decode(b64)
@@ -71,17 +71,27 @@ data class PublicConfig private constructor(val orgId: String, val appId: String
         }
         return urls.distinct().flatMap { url -> pinnedPublicKeys.map { pem -> sha256("$url\n$pem".toByteArray()) } }.distinct()
     }
-    fun toJson(): String = buildJsonObject {
-        put("schemaVersion",1); put("orgId",orgId); put("appId",appId); put("environment",environment)
-        put("manifestUrl",manifestUrl); put("pinnedPublicKey",pinnedPublicKey); put("keyId",keyId)
-        if(pinnedPublicKeys.size > 1) {
-            put("pinnedPublicKeys",JsonArray(pinnedPublicKeys.map(::JsonPrimitive)))
-            put("keyIds",JsonArray(pinnedPublicKeys.map { JsonPrimitive(sha256(it.toByteArray()).take(16)) }))
+    fun toJson(): String {
+        val fields = buildJsonObject {
+            put("schemaVersion",1); put("orgId",orgId); put("appId",appId); put("environment",environment)
+            put("manifestUrl",manifestUrl); put("pinnedPublicKey",pinnedPublicKey); put("keyId",keyId)
+            if(pinnedPublicKeys.size > 1) {
+                put("pinnedPublicKeys",JsonArray(pinnedPublicKeys.map(::JsonPrimitive)))
+                put("keyIds",JsonArray(pinnedPublicKeys.map { JsonPrimitive(sha256(it.toByteArray()).take(16)) }))
+            }
         }
-    }.toString()
+        val full = fields.toString()
+        if(full.toByteArray(Charsets.UTF_8).size <= 4096) return full
+        // Derived metadata must not make an accepted configuration too large to parse again.
+        // A set's first pin is reconstructed by parse; preserve a distinct explicit single pin.
+        return JsonObject(fields.filterKeys {
+            it != "keyId" && it != "keyIds" &&
+                (it != "pinnedPublicKey" || pinnedPublicKeys.size == 1 || pinnedPublicKey != pinnedPublicKeys.first())
+        }).toString()
+    }
     companion object {
         fun parse(text: String): PublicConfig {
-            val o = objectJson(text, 8192)
+            val o = objectJson(text, 4096)
             o.number("schemaVersion",1,1)
             val environment = o.string("environment")
             require(environment == "staging" || environment == "production") { "Unsupported environment." }
@@ -95,14 +105,18 @@ data class PublicConfig private constructor(val orgId: String, val appId: String
             val single = if("pinnedPublicKey" in o) o.string("pinnedPublicKey") else null
             val keys = if("pinnedPublicKeys" in o) {
                 val entries = o["pinnedPublicKeys"] as? JsonArray ?: error("Invalid pinned public key set.")
-                require(entries.isNotEmpty()) { "A pinned public key set cannot be empty." }
+                require(entries.size in 1..16) { "A pinned public key set must contain 1 through 16 keys." }
                 entries.map { (it as? JsonPrimitive)?.takeIf { value -> value.isString }?.content ?: error("Invalid pinned public key.") }
             } else listOf(single ?: error("A pinned public key or key set is required."))
+            require(keys.distinct().size == keys.size) { "Pinned public keys must be distinct exact PEM strings." }
             keys.forEach(::keyBytes)
             require(single == null || single in keys) { "The single pinned public key must belong to the pinned key set." }
             val pem = single ?: keys.first()
             val keyId = sha256(pem.toByteArray()).take(16)
-            require(o["keyId"] == null || o.string("keyId") == keyId) { "Signing key ID does not match." }
+            if("keyId" in o) {
+                require(single != null) { "Signing key ID requires an explicit single pinned public key." }
+                require(o.string("keyId") == keyId) { "Signing key ID does not match." }
+            }
             if("keyIds" in o) require(o["keyIds"] == JsonArray(keys.map { JsonPrimitive(sha256(it.toByteArray()).take(16)) })) { "Signing key IDs do not match the pinned key set." }
             return PublicConfig(org,app,uri.toASCIIString(),pem,keyId,environment,Collections.unmodifiableList(ArrayList(keys)))
         }
