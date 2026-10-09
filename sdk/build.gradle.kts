@@ -7,6 +7,8 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     lint { abortOnError = true }
+    // The instrumentation host uses current platform behavior; consumers still choose their app target SDK.
+    testOptions { targetSdk = 36 }
     sourceSets["androidTest"].assets.srcDir("src/test/resources")
 }
 dependencies {
