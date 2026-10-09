@@ -1,3 +1,13 @@
+# 0.3.0-preview.1
+
+- Accepts a `staging` environment in the public configuration with the environment-scoped manifest path.
+- Validates the additive `variantSchemaVersion: 1` extension with every rule of the shared contract: declared appearance and arm values, no duplicate coordinates, cell images checked like slot images, cell states ignored.
+- Resolves appearance and arm cells in the fixed order arm plus appearance, arm only, appearance only, then the legacy cell, never borrowing across arms; resolved assets report `appearance`, `arm`, and `armSource`; cache entries key on the selected cell.
+- Adds an optional `decide` callback for the arm, run outside the mutex with a bounded wait; afterwards the client resyncs durable state, returns the bundled result when storage fails to revalidate, and reconciles against the current accepted release before any selection or download.
+- Derives the storage namespace from origin, org, app, and environment only, with a one-time verified migration from the previous formula.
+
+Validation: 54 JVM tests with one optional hosted test skipped, lint clean, against the shared corpus of 100 signed manifest cases and 18 resolution entries.
+
 # 0.2.0-preview.1
 
 - Recognizes the signed rendition-schema-1 extension without breaking legacy WebP manifests. Rejects malformed or unknown explicit extensions, including null arrays and versions.

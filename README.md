@@ -1,6 +1,6 @@
 # Assetlib Android SDK
 
-Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.2.1-preview.1** adds localized artwork descriptions alongside demand-sized PNG/WebP renditions and remains a developer preview, not a production support commitment.
+Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.3.0-preview.1** adds localized artwork descriptions alongside demand-sized PNG/WebP renditions and remains a developer preview, not a production support commitment.
 
 [Console](https://assetlib-console.vercel.app) · [Native travel demo](https://github.com/AssetLib/demo-android) · [JavaScript SDK](https://github.com/AssetLib/sdk-js)
 
@@ -8,10 +8,10 @@ The app owns its screens and bundled fallbacks. Assetlib changes artwork assigne
 
 ## Install the preview
 
-Download `assetlib-android-0.2.1-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.2.1-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
+Download `assetlib-android-0.3.0-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.3.0-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
 
 ```kotlin
-implementation(files("libs/assetlib-android-0.2.1-preview.1.aar"))
+implementation(files("libs/assetlib-android-0.3.0-preview.1.aar"))
 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 implementation("org.bouncycastle:bcprov-jdk18on:1.86")
