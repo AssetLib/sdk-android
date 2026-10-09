@@ -1,3 +1,16 @@
+# Verification — October 9, 2026 (America/New_York)
+
+Release `v0.3.0-preview.1` (commit `4d6745c`), rechecked on `main` with the restored accessibility instrumentation test:
+
+- JDK 17, Gradle 8.14.3, Android Gradle Plugin 8.13.2, SDK 36 / build-tools 36.1.0.
+- `node --test scripts/codegen.test.mjs`: 2 passed.
+- `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease :sdk:compileDebugAndroidTestKotlin`: exit 0. JVM unit tests: 54 run, 0 failures, 1 skipped (the optional hosted test, without `ASSETLIB_PUBLIC_CONFIG_FILE`). Lint clean. The shared corpus covers 100 signed manifest cases (production and staging), 18 resolution entries, 6 stateful entries, 2 byte-failure entries, and 4 rendition selections.
+- The release AAR contains no debug-only classes or activities.
+- `./gradlew :sdk:connectedDebugAndroidTest` on an Android 16 (API 36) emulator: 5 passed, 0 failed. That is `AccessibilitySemanticsTest` (restored from `v0.2.1-preview.1`) and the four `AndroidAssetsTest` cases: native PNG and WebP decoding, signed dimension and MIME rejection, and offline restart.
+- GitHub Actions passed for the release commit ([run 37888080051](https://github.com/AssetLib/sdk-android/actions/runs/37888080051)).
+
+Not established: no emulator or device run of the staging, variant cell, or decision callback paths in a real app; no hosted publish, refresh and rollback with a native app on this version; no physical device, API 26 device, manual TalkBack, or performance check.
+
 # Verification — October 7, 2026 (America/New_York)
 
 Local evidence for SDK 0.1.0-preview.1, not a claim of broad production readiness:
@@ -16,57 +29,6 @@ Manual emulator UI inspection, physical-device testing, Android 26 device covera
 
 ## October 8, 2026 — Phase 4 H2 source verification
 
-This records the uncommitted Kotlin implementation of staging, appearance/arm cells, and decision callbacks. It does not update the published SDK version or the earlier release evidence above.
+Recorded while the staging, appearance and arm cell, and decision callback work was still uncommitted. It was committed and released as `0.3.0-preview.1` on October 9, 2026; the Gradle tasks this entry could not run were run for that release (see the October 9 entry above).
 
-1. Files added and changed: added `sdk/src/test/java/com/assetlib/sdk/VariantTest.kt`; changed `sdk/src/main/java/com/assetlib/sdk/{Protocol,AssetClient,AndroidAssets}.kt`, `sdk/src/test/java/com/assetlib/sdk/{AssetClientTest,FixtureDecoder}.kt`, `README.md`, and this file. Earlier accessibility/code-generation work and the H0 fixture changes were preserved. No dependency, fixture, or release-version changes were made for H2.
-
-2. Exact verification commands and output:
-
-`./gradlew :sdk:testDebugUnitTest :sdk:lint --offline` exited 1 before compilation or lint:
-
-```text
-Exception in thread "main" java.io.FileNotFoundException: /Users/tylerzhao/.gradle/wrapper/dists/gradle-8.14.3-all/10utluxaxniiv4wxiphsi49nj/gradle-8.14.3-all.zip.lck (Operation not permitted)
-	at java.base/java.io.IoOverNioFileSystem.convertNioToIoExceptionInStreams(IoOverNioFileSystem.java:123)
-	at java.base/java.io.IoOverNioFileSystem.initializeStreamsUsingNio0(IoOverNioFileSystem.java:377)
-	at java.base/java.io.IoOverNioFileSystem.initializeStreamUsingNio(IoOverNioFileSystem.java:344)
-	at java.base/java.io.RandomAccessFile.<init>(RandomAccessFile.java:298)
-	at java.base/java.io.RandomAccessFile.<init>(RandomAccessFile.java:244)
-	at org.gradle.wrapper.GradleWrapperMain.main(SourceFile:67)
-Caused by: java.nio.file.FileSystemException: /Users/tylerzhao/.gradle/wrapper/dists/gradle-8.14.3-all/10utluxaxniiv4wxiphsi49nj/gradle-8.14.3-all.zip.lck: Operation not permitted
-	at java.base/sun.nio.fs.UnixException.translateToIOException(UnixException.java:102)
-	at java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:108)
-	at java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:114)
-	at java.base/sun.nio.fs.UnixFileSystemProvider.newFileChannel(UnixFileSystemProvider.java:224)
-	at java.base/java.io.IoOverNioFileSystem.initializeStreamsUsingNio0(IoOverNioFileSystem.java:359)
-	... 4 more
-```
-
-**Gradle cannot run in this environment.** The sandbox prohibits creating its wrapper lock under `~/.gradle`; the operator must run the requested Gradle tasks.
-
-As a supplemental offline check, a temporary runner compiled every main and JVM test Kotlin source with cached Kotlin 2.2.20, JDK 17/JVM target 17, the installed Android 36 `android.jar`, and the existing dependency versions. It then ran all four test classes with JUnit 4.13.2. No dependencies were installed or changed. The JVM fixture decoder is used, not Android's actual bitmap decoder. `ASSETLIB_PUBLIC_CONFIG_FILE` was explicitly empty, so the optional hosted smoke test was assumption-skipped (37 passed, one skipped, zero failures).
-
-`python3 /private/tmp/assetlib-h2-verification/run-jvm.py --compile-only` exited 0:
-
-```text
-Kotlin 2.2.20 compilation (JVM target 17): 0
-```
-
-`python3 /private/tmp/assetlib-h2-verification/run-jvm.py` exited 0:
-
-```text
-Kotlin 2.2.20 compilation (JVM target 17): 0
-JUnit version 4.13.2
-......................................
-Time: 0.76
-
-OK (38 tests)
-
-```
-
-This includes all 100 signed manifest corpus cases with their selected configurations, all 18 resolution entries, six stateful entries, and two byte-failure entries. Additional signed mutation tests cover axis/schema/cell boundaries, cell rendition/accessibility validation, ignored native states, staging isolation, callback reentry/cancellation/failure, and cell selection through cache/restart/historical fallback. Original decoder and positional format call shapes are also exercised.
-
-`git diff --check` exited 0 with no output.
-
-3. Deviations: no implementation deviations. Direct compiler/JUnit execution supplements the blocked Gradle command; it does not establish an Android Gradle build or lint success. Native state sets remain ignored as specified.
-
-4. Unfinished: operator execution of `./gradlew :sdk:testDebugUnitTest :sdk:lint --offline`. No H2 implementation work remains. No commit, stash, deployment, publication, or version bump was performed.
+At the time, `./gradlew :sdk:testDebugUnitTest :sdk:lint --offline` exited 1 before compiling because the sandbox could not create the wrapper lock under `~/.gradle` (`Operation not permitted`). As a supplemental check, a temporary runner outside this repository compiled every main and JVM test Kotlin source with Kotlin 2.2.20, JDK 17, and the Android 36 `android.jar`, then ran the four JVM test classes with JUnit 4.13.2: 38 tests, all passing, with the optional hosted test skipped. That covered all 100 signed manifest cases with their configurations, all 18 resolution entries, 6 stateful entries, and 2 byte-failure entries, plus signed mutation tests for variant axes, cells, staging isolation, decision callbacks, and cache, restart, and historical fallback. A direct compiler and JUnit run is not evidence of a Gradle build or lint pass; those came with the release.

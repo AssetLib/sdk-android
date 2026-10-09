@@ -1,10 +1,10 @@
 # Assetlib Android SDK
 
-Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.3.0-preview.1** adds localized artwork descriptions alongside demand-sized PNG/WebP renditions and remains a developer preview, not a production support commitment.
+Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.3.0-preview.1** adds staging configurations, appearance and arm variant cells, an app-supplied arm decision callback, and pinned key sets, alongside the localized artwork descriptions from 0.2.1 and demand-sized PNG/WebP renditions. It remains a developer preview, not a production support commitment.
 
-[Console](https://assetlib-console.vercel.app) · [Native travel demo](https://github.com/AssetLib/demo-android) · [JavaScript SDK](https://github.com/AssetLib/sdk-js)
+[Console](https://console.assetlib.dev) · [Native travel demo](https://github.com/AssetLib/demo-android) · [JavaScript SDK](https://github.com/AssetLib/sdk-js)
 
-The app owns its screens and bundled fallbacks. Assetlib changes artwork assigned to compatible, declared placements. This SDK does not change layouts or executable code, discover unused assets, or ship Figma/experimentation integrations. The appearance, arm, and staging APIs below describe the current source; they have not been published in a new SDK release.
+The app owns its screens and bundled fallbacks. Assetlib changes artwork assigned to compatible, declared placements. This SDK does not change layouts or executable code, discover unused assets, or ship Figma/experimentation integrations.
 
 ## Install the preview
 
@@ -24,7 +24,7 @@ No Maven Central publication is claimed. R8 can shrink the app's dependency set;
 
 Create a workspace in the console and download its **public SDK configuration**. Keep the pinned public key independently in this configuration; do not derive trust from a downloaded manifest. Never put admin credentials in an app.
 
-For key rotation, the current source also accepts `pinnedPublicKeys`, a nonempty array of trusted Ed25519 PEM strings, and optional `keyIds` matching that array in order. The existing `pinnedPublicKey` must belong to the set when both fields are supplied. Stored and downloaded releases must verify against this current set, so retain old trusted keys while retained releases still use them. Expanding or reordering the set preserves the storage namespace.
+For key rotation, the public configuration also accepts `pinnedPublicKeys`, a nonempty array of trusted Ed25519 PEM strings, and optional `keyIds` matching that array in order. The existing `pinnedPublicKey` must belong to the set when both fields are supplied. Stored and downloaded releases must verify against this current set, so retain old trusted keys while retained releases still use them. Expanding or reordering the set preserves the storage namespace.
 
 ```kotlin
 val config = PublicConfig.parse(publicConfigJson)
