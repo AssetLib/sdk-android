@@ -10,6 +10,8 @@
 
 Validation on October 9, 2026: codegen tests (2), 98 JVM unit tests with the optional hosted test skipped, lint, and the release build passed. See VERIFICATION.md.
 
+Documentation fix on `main`, October 9, 2026, after the release was published: the README install section still said the patch was untagged and unpublished. It now points straight at the published release. No source or AAR change.
+
 # 0.3.0-preview.1
 
 - Accepts a `staging` environment in the public configuration with the environment-scoped manifest path.

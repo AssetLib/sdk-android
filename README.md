@@ -8,7 +8,7 @@ The app owns its screens and bundled fallbacks. Assetlib changes artwork assigne
 
 ## Install the preview
 
-The `0.3.1-preview.1` patch is prepared in source and has not been tagged or published. After publication, download `assetlib-android-0.3.1-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.3.1-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
+Download `assetlib-android-0.3.1-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.3.1-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
 
 ```kotlin
 implementation(files("libs/assetlib-android-0.3.1-preview.1.aar"))
