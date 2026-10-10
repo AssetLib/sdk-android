@@ -23,10 +23,12 @@ function accessibility(value) {
 for(const p of data.placements) {
  if(typeof p.key!=='string'||!/^[a-zA-Z][a-zA-Z0-9_.-]{0,119}$/.test(p.key)||seen.has(p.key)||!Array.isArray(p.symbol)||p.symbol.length!==2||p.symbol.some(s=>typeof s!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(s)||reserved.has(s))||symbols.has(p.symbol.join('.'))||![p.width,p.height].every(x=>Number.isInteger(x)&&x>=1&&x<=8192)) throw Error('Invalid or duplicate placement');
  const bundled='bundledAccessibility' in p?accessibility(p.bundledAccessibility):'';
- seen.add(p.key); symbols.add(p.symbol.join('.')); const [group,name]=p.symbol; if(!groups.has(group)) groups.set(group,[]); groups.get(group).push({ ...p,name,bundled });
+ if('rendering' in p&&p.rendering!=='original'&&p.rendering!=='template') throw Error(`Invalid rendering for ${p.key}: use "original" or "template"`);
+ const template=p.rendering==='template'?', rendering = AssetRendering.Template':'';
+ seen.add(p.key); symbols.add(p.symbol.join('.')); const [group,name]=p.symbol; if(!groups.has(group)) groups.set(group,[]); groups.get(group).push({ ...p,name,bundled,template });
 }
-const lines=['// Generated offline from the checked-in catalog. Do not edit.',`package ${packageName}`,'','import com.assetlib.sdk.AssetRef',...(data.placements.some(p=>'bundledAccessibility' in p)?['import com.assetlib.sdk.AssetAccessibility']:[]),'','object AppAssets {'];
-for(const group of [...groups.keys()].sort()) { lines.push(`    object ${group} {`); for(const p of groups.get(group).sort((a,b)=>a.name.localeCompare(b.name,'en'))) lines.push(`        val ${p.name} = AssetRef(${JSON.stringify(p.key)}, ${p.width}, ${p.height}${p.bundled})`); lines.push('    }'); }
+const lines=['// Generated offline from the checked-in catalog. Do not edit.',`package ${packageName}`,'','import com.assetlib.sdk.AssetRef',...(data.placements.some(p=>'bundledAccessibility' in p)?['import com.assetlib.sdk.AssetAccessibility']:[]),...(data.placements.some(p=>p.rendering==='template')?['import com.assetlib.sdk.AssetRendering']:[]),'','object AppAssets {'];
+for(const group of [...groups.keys()].sort()) { lines.push(`    object ${group} {`); for(const p of groups.get(group).sort((a,b)=>a.name.localeCompare(b.name,'en'))) lines.push(`        val ${p.name} = AssetRef(${JSON.stringify(p.key)}, ${p.width}, ${p.height}${p.bundled}${p.template})`); lines.push('    }'); }
 lines.push('}',''); const result=lines.join('\n');
 if(flag==='--check') { if(readFileSync(output,'utf8')!==result) throw Error('Generated references are stale; run codegen.'); }
 else { mkdirSync(dirname(output),{recursive:true}); writeFileSync(output,result); }
