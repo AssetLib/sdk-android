@@ -1,4 +1,4 @@
-# Unreleased
+# 0.4.0-preview.1 — October 10, 2026
 
 - Adds tintable icons. `AssetRef` gains `rendering: AssetRendering = AssetRendering.Original` as its last parameter; `AssetRendering` is `Original` or `Template`.
 - Reads an optional `rendering` string on signed placements and variant cells; state members stay ignored. A malformed value (null, a non-string, or anything outside `^[a-z][a-z0-9-]{0,31}$`) rejects the manifest. A well-formed value this client does not know is kept.
@@ -9,7 +9,7 @@
 
 Recompile consuming applications and their generated references when replacing the AAR. The new `AssetRef` parameter keeps Kotlin source call sites compiling, but changes its JVM constructor, `copy`, and component signatures.
 
-Validation on October 9, 2026: codegen tests (3), 102 JVM unit tests with the optional hosted test skipped, and lint passed. No release build, emulator, or device run. See VERIFICATION.md.
+Validation on October 9 and 10, 2026: codegen tests (3), 102 JVM unit tests with the optional hosted test skipped, lint, and the release build passed (`./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease`, JDK 17). `assetlib-android-0.4.0-preview.1.aar` SHA-256 `03d55eaa1975fe86494fb2f65e69e0ad7ad3f5a60d492f02d3c06bf3bdc9a98a` (macOS build; CI on the tag uploads a Linux build for comparison). No emulator or device run. See VERIFICATION.md.
 
 # 0.3.1-preview.1 — October 9, 2026
 

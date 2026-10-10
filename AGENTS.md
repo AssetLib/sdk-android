@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Assetlib Android SDK: the public, MIT-licensed Kotlin library (Gradle module `:sdk`, package `com.assetlib.sdk`) that verifies signed artwork releases, keeps a verified local cache, and returns ordinary Android `Bitmap` values. The app keeps its own bundled fallbacks and Compose code; the SDK has no Compose dependency. API 26+, compileSdk 36, JDK 17. It ships as an AAR attached to GitHub prereleases with a `SHA256SUMS` file; no Maven publication. Manifests are signed by the hosted console (https://console.assetlib.dev). Developer preview; latest release `v0.3.1-preview.1` (October 9, 2026). The Swift SDK (AssetLib/sdk-swift) and the JavaScript SDK (AssetLib/sdk-js) implement the same contract; AssetLib/demo-android consumes the released AAR.
+Assetlib Android SDK: the public, MIT-licensed Kotlin library (Gradle module `:sdk`, package `com.assetlib.sdk`) that verifies signed artwork releases, keeps a verified local cache, and returns ordinary Android `Bitmap` values. The app keeps its own bundled fallbacks and Compose code; the SDK has no Compose dependency. API 26+, compileSdk 36, JDK 17. It ships as an AAR attached to GitHub prereleases with a `SHA256SUMS` file; no Maven publication. Manifests are signed by the hosted console (https://console.assetlib.dev). Developer preview; latest release `v0.4.0-preview.1` (October 10, 2026). The Swift SDK (AssetLib/sdk-swift) and the JavaScript SDK (AssetLib/sdk-js) implement the same contract; AssetLib/demo-android consumes the released AAR.
 
 ## Setup and commands
 

@@ -1,6 +1,6 @@
-# Verification — October 9, 2026: tintable icons (unreleased)
+# Verification — October 10, 2026: release v0.4.0-preview.1 (tintable icons)
 
-Branch `feat/tintable-icons`, before any version is assigned:
+Release AAR `assetlib-android-0.4.0-preview.1.aar`, SHA-256 `03d55eaa1975fe86494fb2f65e69e0ad7ad3f5a60d492f02d3c06bf3bdc9a98a`, built on macOS with JDK 17 by `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease` (102 tests, 0 failures, 1 skipped; lint clean) and `node scripts/prepare-release.mjs`. Earlier checks on branch `feat/tintable-icons`:
 
 - `node --test scripts/codegen.test.mjs`: 3 passed. A catalog without template placements, and one with explicit `"original"`, generate output byte-identical to the previous generator.
 - `./gradlew :sdk:testDebugUnitTest :sdk:lint`: exit 0. JVM unit tests: 102 run, 0 failures, 1 skipped (the optional hosted test, without `ASSETLIB_PUBLIC_CONFIG_FILE`). Lint clean. The corpus has 115 signed manifest cases and 10 rendering resolution cases; bundled rendering cases assert that no artwork body is requested.
