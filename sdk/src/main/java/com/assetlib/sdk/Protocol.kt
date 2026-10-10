@@ -27,6 +27,7 @@ internal val json = Json { isLenient = false; allowSpecialFloatingPointValues = 
 internal val uuidPattern = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
 internal val hashPattern = Regex("[a-f0-9]{64}")
 internal val keyPattern = Regex("[a-zA-Z][a-zA-Z0-9_.-]{0,119}")
+internal val renderingPattern = Regex("[a-z][a-z0-9-]{0,31}")
 fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 internal fun strictUtf8(bytes: ByteArray): String = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
 internal fun objectJson(text: String, max: Int): JsonObject {
@@ -123,8 +124,11 @@ data class PublicConfig private constructor(val orgId: String, val appId: String
     }
 }
 
+/** How the app draws the artwork. Template artwork is a single-color mask the app tints. */
+enum class AssetRendering(val wireValue: String) { Original("original"), Template("template") }
 /** Generate these from a checked-in catalog; layout remains owned by your app. */
-data class AssetRef(val key: String, val width: Int, val height: Int, val bundledAccessibility: AssetAccessibility? = null) {
+data class AssetRef(val key: String, val width: Int, val height: Int, val bundledAccessibility: AssetAccessibility? = null,
+                    val rendering: AssetRendering = AssetRendering.Original) {
     init { require(keyPattern.matches(key) && width in 1..8192 && height in 1..8192) { "Invalid asset reference." } }
 }
 /** Explicit pixel demand. Compose modifiers do not automatically change this value. */
@@ -139,7 +143,7 @@ internal data class Candidate(val hash: String, val url: String, val bytes: Int,
 internal data class Variants(val appearance: List<AssetAppearance> = emptyList(), val arm: List<String> = emptyList())
 internal data class Cell(val appearance: AssetAppearance?, val arm: String?, val image: Slot)
 internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int, val renditions: List<Candidate> = emptyList(), val accessibility: AssetAccessibility? = null,
-                         val variants: Variants? = null, val cells: List<Cell> = emptyList())
+                         val variants: Variants? = null, val cells: List<Cell> = emptyList(), val rendering: String = AssetRendering.Original.wireValue)
 internal data class Release(val sequence: Long, val payload: String, val envelope: JsonObject, val slots: List<Slot>)
 
 internal val nativeFormats = listOf("image/webp", "image/png")
@@ -192,7 +196,10 @@ private fun parseImage(s: JsonObject, key: String, w: Int, h: Int, config: Publi
         }
     } else emptyList()
     val accessibility = s["accessibility"]?.let(::parseAccessibility)
-    return Slot(key,w,h,id,hash,url,size,renditions,accessibility)
+    // A well-formed value this client does not know is kept: it only makes this descriptor incompatible.
+    val rendering = if("rendering" in s) s.string("rendering").also { require(renderingPattern.matches(it)) { "Invalid rendering." } }
+        else AssetRendering.Original.wireValue
+    return Slot(key,w,h,id,hash,url,size,renditions,accessibility,rendering=rendering)
 }
 
 private fun parseAppearance(value: String): AssetAppearance = AssetAppearance.entries.firstOrNull { it.wireValue == value }

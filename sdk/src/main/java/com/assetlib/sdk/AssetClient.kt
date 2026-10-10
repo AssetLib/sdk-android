@@ -150,6 +150,11 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
                 val selected = decision.arm?.let { cell(it,appearance) ?: cell(it,null) }
                     ?: appearance?.let { cell(null,it) }
                 val slot = selected?.image ?: placement
+                // Like a size mismatch: a different or unknown rendering is never read from cache or downloaded.
+                if(slot.rendering != ref.rendering.wireValue) {
+                    reason = "Published artwork for this placement uses a different rendering."
+                    return@forEachIndexed
+                }
                 for(candidate in candidates(slot,targetPixels,supportedFormats)) {
                     fun valid(bytes: ByteArray): AssetImageInfo? {
                         if(bytes.size != candidate.bytes || bytes.size > Limits.ASSET_BYTES || sha256(bytes) != candidate.hash) return null
