@@ -1,3 +1,16 @@
+# Unreleased
+
+- Adds tintable icons. `AssetRef` gains `rendering: AssetRendering = AssetRendering.Original` as its last parameter; `AssetRendering` is `Original` or `Template`.
+- Reads an optional `rendering` string on signed placements and variant cells; state members stay ignored. A malformed value (null, a non-string, or anything outside `^[a-z][a-z0-9-]{0,31}$`) rejects the manifest. A well-formed value this client does not know is kept.
+- Uses a descriptor only when its rendering equals the reference's (absent means original), checked on the selected appearance or arm cell. A mismatch or unknown value is handled like incompatible dimensions: that release's artwork is never read from the cache or downloaded, retained releases follow the same rule, and with no compatible artwork the result is `BUNDLE`. Other placements are unaffected.
+- Code generation reads catalog `rendering`: `"template"` generates `rendering = AssetRendering.Template`, `"original"` or no field generates byte-identical output, and any other value fails.
+- No Compose dependency is added: the SDK returns the mask `Bitmap` and the app tints it. The README shows `Icon` with `LocalContentColor`, a VectorDrawable fallback, and `targetPixels` at logical size × density.
+- Vendors the shared corpus with 15 rendering manifests (115 signed manifest cases) and 10 rendering resolution cases.
+
+Recompile consuming applications and their generated references when replacing the AAR. The new `AssetRef` parameter keeps Kotlin source call sites compiling, but changes its JVM constructor, `copy`, and component signatures.
+
+Validation on October 9, 2026: codegen tests (3), 102 JVM unit tests with the optional hosted test skipped, and lint passed. No release build, emulator, or device run. See VERIFICATION.md.
+
 # 0.3.1-preview.1 — October 9, 2026
 
 - Rejects public configuration JSON over 4096 UTF-8 bytes, including unknown fields; the previous limit was 8192 bytes.

@@ -33,7 +33,7 @@ node scripts/prepare-release.mjs   # copies the release AAR to build/release/ an
 
 ## Shared contract corpus
 
-- `sdk/src/test/resources/fixtures/` is a byte-for-byte copy of the signed interoperability corpus that the Swift SDK vendors at `Tests/AssetLibTests/Fixtures/` and that is also run against the JavaScript SDK where the corpus is generated: 100 signed manifest cases (`cases.json` is the index, each case names its `production` or `staging` config), 18 variant resolution entries, 6 stateful cases, 2 byte-failure cases, and 4 rendition selections.
+- `sdk/src/test/resources/fixtures/` is a byte-for-byte copy of the signed interoperability corpus that the Swift SDK vendors at `Tests/AssetLibTests/Fixtures/` and that is also run against the JavaScript SDK where the corpus is generated: 115 signed manifest cases (`cases.json` is the index, each case names its `production` or `staging` config), 18 variant resolution entries, 6 stateful cases, 2 byte-failure cases, 4 rendition selections, and 10 rendering resolution cases (`rendering.json`).
 - The corpus is generated outside this repo. Never hand-edit, re-sign, or reformat a fixture: signatures cover exact payload bytes, and outer JSON whitespace differs from the signed payload on purpose. A contract change lands in the corpus first; then replace the whole directory here and in sdk-swift in the same pass.
 - No CI step checks the copy against its source. A `diff -r` against the Swift repo's fixture directory should show only its local `README.txt`.
 - `keys/TEST_ONLY_*` is deliberately public test material. Never trust it outside tests.
@@ -50,16 +50,17 @@ node scripts/prepare-release.mjs   # copies the release AAR to build/release/ an
 - **Cache and offline restart.** Cached bytes are re-verified on read (length, SHA-256, decoded MIME and dimensions). Only the latest accepted release may download; older retained releases are cache-only fallbacks.
 - **Renditions.** Smallest raster meeting the target, else largest; ties by byte length, then hash; the legacy WebP slot is always the last candidate. Format lists must be unique and include `image/webp`. SVG metadata is validated, never fetched.
 - **Variants.** Resolution order: (arm, appearance), (arm, any), (control, appearance), legacy slot. Never borrow another arm's artwork. Native clients ignore `states`.
+- **Rendering.** The selected descriptor's `rendering` (absent = original) must equal `AssetRef.rendering`. A mismatch or well-formed unknown value is incompatible like wrong dimensions: no cache read, no download, for retained releases too. Malformed values reject the manifest. `RenderingTest` covers this.
 - **Decision callback.** Never invoke it while holding the mutex. It runs only when no explicit `arm` is passed and the latest matching slot declares arms. Default wait 1,500 ms, allowed 100..10,000. Timeout, throw, null, or an undeclared arm resolves control with `INVALID_DECISION` and a reason in `message`. The job is cancelled, never joined. Afterwards the client re-syncs state and re-checks the arm against the current release. `DecisionRaceTest` and `VariantTest` cover this.
 - **Limits** in `Limits` and the README "Verification and fallback" section are contract values. Change them only together with the corpus.
 - No background downloads, analytics, user identifiers, or exposure logging in the SDK. `consumer-rules.pro` relies on there being no reflective serialization (JSON tree parsing only) and no crypto provider registration; keep it that way or add the keep rules. Lint runs with `abortOnError = true`.
 
 ## Public API and compatibility
 
-- Public surface: `AssetClient`, `AndroidAssets`, `PublicConfig`, `AssetRef`, `AssetPixelSize`, `AssetImageInfo`, `AssetAppearance`, `AssetArmSource`, `AssetSource`, `AssetAccessibility`, `ResolvedAsset`, `ClientStatus`, `RefreshResult`, `Limits`, `sha256`, the `AssetStorage` and `AssetTransport` interfaces, `FileAssetStorage`, `HttpsTransport`.
+- Public surface: `AssetClient`, `AndroidAssets`, `PublicConfig`, `AssetRef`, `AssetRendering`, `AssetPixelSize`, `AssetImageInfo`, `AssetAppearance`, `AssetArmSource`, `AssetSource`, `AssetAccessibility`, `ResolvedAsset`, `ClientStatus`, `RefreshResult`, `Limits`, `sha256`, the `AssetStorage` and `AssetTransport` interfaces, `FileAssetStorage`, `HttpsTransport`.
 - Secondary constructors on `AssetClient`, the second `AndroidAssets.client` overload, and the three-argument `resolve` overload exist to keep older call shapes compiling. Keep them. Add new parameters with defaults, after existing ones.
 - Adding a property to a public data class changes its JVM constructor signature even when Kotlin call sites still compile. Say so in RELEASE-NOTES.md ("recompile consuming applications").
-- Apps commit generated `AppAssets.kt` that calls `AssetRef(key, width, height, bundledAccessibility = AssetAccessibility(locale, mapOf(...)))`. Keep it source-compatible.
+- Apps commit generated `AppAssets.kt` that calls `AssetRef(key, width, height, bundledAccessibility = AssetAccessibility(locale, mapOf(...)), rendering = AssetRendering.Template)`, with each named argument only when the catalog declares it. Keep it source-compatible.
 - The AAR does not bundle dependencies, and apps add the exact versions listed in the README. A dependency change must update `sdk/build.gradle.kts`, the README install block, and `THIRD-PARTY-NOTICES.md` (plus `licenses/` when a license text changes) together.
 
 ## Release and versioning

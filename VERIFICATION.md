@@ -1,3 +1,13 @@
+# Verification — October 9, 2026: tintable icons (unreleased)
+
+Branch `feat/tintable-icons`, before any version is assigned:
+
+- `node --test scripts/codegen.test.mjs`: 3 passed. A catalog without template placements, and one with explicit `"original"`, generate output byte-identical to the previous generator.
+- `./gradlew :sdk:testDebugUnitTest :sdk:lint`: exit 0. JVM unit tests: 102 run, 0 failures, 1 skipped (the optional hosted test, without `ASSETLIB_PUBLIC_CONFIG_FILE`). Lint clean. The corpus has 115 signed manifest cases and 10 rendering resolution cases; bundled rendering cases assert that no artwork body is requested.
+- The fixture directory is byte-identical to the generated shared corpus (196 files).
+
+Not run: the release build, instrumented tests, any emulator or device check, and CI.
+
 # Verification — October 9, 2026: release v0.3.1-preview.1
 
 Release `v0.3.1-preview.1` (tag on commit `a7f40eb`), AAR SHA-256 `d3f725c1270987ae06da4f5f9cf0673e165f2b2fd7449537adfff367460a1bc3`:

@@ -122,6 +122,34 @@ node scripts/generate-assets.mjs catalog.json app/src/main/java/com/example/app/
 
 Use `AppAssets.Travel.coast` at image call sites. Generation validates duplicate keys/symbols, Kotlin identifiers, and dimensions. It is a checked-in project catalog, not automatic discovery of every image or observed runtime usage. Changing a Kotlin symbol need not change its remote key. Keep old placements while installed app versions still need them; incompatible dimensions fall back instead of silently changing a contract.
 
+### Tintable icons
+
+Unreleased: on `main`, not in 0.3.1-preview.1, which ignores `rendering`.
+
+A catalog placement can declare `"rendering": "template"`. Its published artwork is a single-color alpha mask, and the app supplies the color at render time from its theme, selected state, or dark mode. `rendering` may be `"original"` (the default) or `"template"`; any other value fails generation. A template placement generates `AssetRef("tab.trips", 24, 24, rendering = AssetRendering.Template)`. To change a placement's rendering, declare a new key.
+
+```json
+{"key":"tab.trips","symbol":["Tabs","trips"],"width":24,"height":24,"rendering":"template"}
+```
+
+A reference uses only artwork published with the same rendering, checked on the selected appearance or arm cell. A different or unknown rendering is treated like incompatible dimensions: that release's artwork is never read from the cache or downloaded, earlier releases are checked the same way, and otherwise the result is `BUNDLE`. Other placements are unaffected. The SDK still returns a plain `Bitmap` and adds no Compose dependency; the app tints it. Bundle a single-color fallback as well, such as a VectorDrawable.
+
+```kotlin
+val side = with(LocalDensity.current) { 24.dp.roundToPx() } // logical size × density
+val bitmap by produceState<Bitmap?>(null, client, side) {
+    value = AndroidAssets.bitmap(client, AppAssets.Tabs.trips, AssetPixelSize(side, side))
+}
+Icon(
+    // The demo's adapter: BitmapPainter for the verified mask, else painterResource for the VectorDrawable fallback.
+    painter = rememberAssetArtworkPainter(bitmap, R.drawable.ic_tab_trips),
+    contentDescription = null, // The surrounding control owns the label.
+    tint = LocalContentColor.current,
+    modifier = Modifier.size(24.dp),
+)
+```
+
+`Icon` applies the same tint to the remote mask and to the VectorDrawable that `painterResource` loads, so switching between them keeps the color. Request `targetPixels` as logical size × density: without it, resolution asks for the logical size and selects a 1× mask on a denser screen.
+
 ## Verification and fallback
 
 - Exact UTF-8 signed payload bytes; pinned Ed25519 SPKI public key; `keyId` is the first 16 lowercase hex characters of SHA-256 of the exact PEM bytes.
@@ -147,6 +175,6 @@ node --test scripts/codegen.test.mjs
 ASSETLIB_PUBLIC_CONFIG_FILE=/absolute/path/public-config.json ./gradlew :sdk:testDebugUnitTest --rerun-tasks
 ```
 
-The checked-in synthetic interop corpus covers 43 public-config cases with 39 signature verification expectations, 100 signed manifest cases and 18 variant resolution cases, including staging, UTF-8, key/signature tampering, invalid schema/URLs/renditions/accessibility/variant metadata, and stateful replay/equivocation. JVM tests load each case's configuration and every resolution entry. Unit tests additionally cover decision callbacks, cell selection through cache/restart/historical fallback, staging isolation, target selection, legacy fallback, locale lookup, description pairing across remote/cache/bundle states, concurrent writers, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
+The checked-in synthetic interop corpus covers 43 public-config cases with 39 signature verification expectations, 115 signed manifest cases, 18 variant resolution cases and 10 rendering resolution cases, including staging, UTF-8, key/signature tampering, invalid schema/URLs/renditions/accessibility/variant/rendering metadata, and stateful replay/equivocation. JVM tests load each case's configuration and every resolution entry. Unit tests additionally cover decision callbacks, cell selection through cache/restart/historical fallback, rendering matching through cache and retained releases without downloads, staging isolation, target selection, legacy fallback, locale lookup, description pairing across remote/cache/bundle states, concurrent writers, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
 
 Only public artwork should be published to the hosted preview: delivery URLs are publicly retrievable. It is bounded preview infrastructure. See `SECURITY.md` for trust limits.
