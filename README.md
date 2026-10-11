@@ -120,7 +120,7 @@ node scripts/generate-assets.mjs catalog.json app/src/main/java/com/example/app/
 node scripts/generate-assets.mjs catalog.json app/src/main/java/com/example/app/AppAssets.kt com.example.app --check
 ```
 
-Use `AppAssets.Travel.coast` at image call sites. Generation validates duplicate keys/symbols, Kotlin identifiers, and dimensions. It is a checked-in project catalog, not automatic discovery of every image or observed runtime usage. Changing a Kotlin symbol need not change its remote key. Keep old placements while installed app versions still need them; incompatible dimensions fall back instead of silently changing a contract.
+Use `AppAssets.Travel.coast` at image call sites. Generation validates duplicate keys/symbols, Kotlin identifiers, and dimensions. A symbol cannot be a Kotlin keyword or one of `AppAssets`, `AssetRef`, `AssetAccessibility` and `AssetRendering`; two groups cannot differ only in case, and two names in one group cannot share a JVM getter (`coast` and `Coast`). A package segment that is a Kotlin keyword is escaped with backticks. It is a checked-in project catalog, not automatic discovery of every image or observed runtime usage. Changing a Kotlin symbol need not change its remote key. Keep old placements while installed app versions still need them; incompatible dimensions fall back instead of silently changing a contract.
 
 ### Tintable icons
 

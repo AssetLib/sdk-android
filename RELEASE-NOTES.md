@@ -1,3 +1,10 @@
+# Unreleased
+
+- Code generation rejects a group or member named `AppAssets`, `AssetRef`, `AssetAccessibility` or `AssetRendering`, as the Swift generator does for its own generated names. `AssetRendering` produced Kotlin that did not compile when the catalog had a template placement; the other three shadowed the generated root object or the imported SDK types.
+- Code generation rejects two groups that differ only in case (their class files overwrite each other on case-insensitive file systems, so one object is missing at run time) and two members of one group that compile to the same JVM getter, such as `coast` and `Coast`, which did not compile.
+- A package segment that is a Kotlin hard keyword, such as `is` or `fun`, is escaped with backticks; the unescaped `package` line did not compile.
+- Any other catalog generates byte-identical output. SDK sources and the AAR are unchanged.
+
 # 0.4.0-preview.1 — October 10, 2026
 
 - Adds tintable icons. `AssetRef` gains `rendering: AssetRendering = AssetRendering.Original` as its last parameter; `AssetRendering` is `Original` or `Template`.

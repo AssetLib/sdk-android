@@ -61,3 +61,31 @@ test('template rendering is carried into the reference and other placements are 
   }
  } finally { rmSync(dir,{recursive:true,force:true}); }
 });
+test('symbols cannot shadow the generated object or the SDK types it names',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'assetlib-reserved-codegen-')); try {
+  const input=join(dir,'catalog.json'), output=join(dir,'AppAssets.kt');
+  const coast={key:'travel.coast',symbol:['Travel','coast'],width:1200,height:900,rendering:'template',bundledAccessibility:{defaultLocale:'en',descriptions:{en:'Coast'}}};
+  const run=placements=>{ writeFileSync(input,JSON.stringify({schemaVersion:1,placements})); const result=spawnSync(process.execPath,[script,input,output,'com.example.app'],{encoding:'utf8'}); return {...result,text:result.status===0?readFileSync(output,'utf8'):''}; };
+  for(const name of ['AppAssets','AssetRef','AssetAccessibility','AssetRendering']) for(const symbol of [[name,'hero'],['Travel',name]]) {
+   const result=run([coast,{key:'other',symbol,width:10,height:10}]);
+   assert.notEqual(result.status,0); assert.match(result.stderr,/uses a name the generated Kotlin needs: AppAssets, AssetRef, AssetAccessibility, AssetRendering/);
+  }
+  assert.equal(run([coast,{key:'a',symbol:['assetRef','AppAssetsHero'],width:10,height:10},{key:'b',symbol:['AssetRefs','assetRendering'],width:20,height:20}]).text,[
+   '// Generated offline from the checked-in catalog. Do not edit.','package com.example.app','','import com.assetlib.sdk.AssetRef','import com.assetlib.sdk.AssetAccessibility','import com.assetlib.sdk.AssetRendering','','object AppAssets {',
+   '    object AssetRefs {','        val assetRendering = AssetRef("b", 20, 20)','    }',
+   '    object Travel {','        val coast = AssetRef("travel.coast", 1200, 900, bundledAccessibility = AssetAccessibility("en", mapOf("en" to "Coast")), rendering = AssetRendering.Template)','    }',
+   '    object assetRef {','        val AppAssetsHero = AssetRef("a", 10, 10)','    }','}',''].join('\n'));
+ } finally { rmSync(dir,{recursive:true,force:true}); }
+});
+test('output never collides on the JVM or a case-insensitive file system, and keyword packages are escaped',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'assetlib-jvm-codegen-')); try {
+  const input=join(dir,'catalog.json'), output=join(dir,'AppAssets.kt');
+  const run=(symbols,packageName='com.example.app')=>{ writeFileSync(input,JSON.stringify({schemaVersion:1,placements:symbols.map((symbol,i)=>({key:`k${i}`,symbol,width:10,height:10}))})); const result=spawnSync(process.execPath,[script,input,output,packageName],{encoding:'utf8'}); return {...result,text:result.status===0?readFileSync(output,'utf8'):''}; };
+  let result=run([['Travel','coast'],['travel','beach']]); assert.notEqual(result.status,0); assert.match(result.stderr,/Groups Travel and travel differ only in case/);
+  result=run([['Travel','coast'],['Travel','Coast']]); assert.notEqual(result.status,0); assert.match(result.stderr,/Travel\.coast and Travel\.Coast compile to the same JVM getter getCoast\(\)/);
+  result=run([['Travel','is_x'],['Travel','Is_x']]); assert.equal(result.status,0);
+  assert.equal(run([['Travel','coast'],['Tabs','Coast'],['Travel','isOpen'],['Travel','IsOpen']]).status,0);
+  assert.ok(run([['Travel','coast']],'is.example.fun').text.startsWith('// Generated offline from the checked-in catalog. Do not edit.\npackage `is`.example.`fun`\n'));
+  assert.ok(run([['Travel','coast']],'com.example.data').text.includes('\npackage com.example.data\n'));
+ } finally { rmSync(dir,{recursive:true,force:true}); }
+});
