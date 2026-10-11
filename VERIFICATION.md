@@ -1,3 +1,11 @@
+# Verification — October 10, 2026: short looping video (branch `feat/looping-video`, unreleased)
+
+- The fixture directory is byte-identical to the generated shared corpus (`check-copy.mjs`: 227/227 files), now with 142 signed manifest cases, `video.json` and the `loop.mp4` fixtures.
+- `./gradlew :sdk:testDebugUnitTest :sdk:lint --rerun-tasks` with JDK 17: exit 0. JVM unit tests: 113 run, 0 failures, 1 skipped (the optional hosted test). `VideoTest` adds 11: every video manifest case, descriptor edges, the header walker, the `video.json` resolution and byte-failure cases, no clip download from image resolution, cache-only retained releases, a current release without a clip, eviction and corruption with download again, storage without file support, image resolution during a blocked clip download, and the clip deadline and `Accept` header against a local TLS `MockWebServer`. Lint: 0 errors, 9 warnings, all newer-dependency notices.
+- `node --test scripts/codegen.test.mjs`: 5 passed.
+
+Not run: the release build, instrumented tests, any emulator or device check, playback of the clip by Media3, and CI.
+
 # Verification — October 10, 2026: code generation names (unreleased, `main`)
 
 - Before the fix, with the Kotlin 2.2.20 compiler (K2, and language version 1.9 for the K1 frontend), generated files were compiled in the unit-test source set: a group or member named `AssetRendering` with a template placement failed (argument type mismatch; unresolved reference `Template`); members `coast` and `Coast` failed with a platform declaration clash on `getCoast()`; a package segment `is` failed with a syntax error; groups `Travel` and `travel` compiled, but on the case-insensitive macOS file system `AppAssets$Travel.class` held class `AppAssets$travel`. Groups or members named `AppAssets`, `AssetRef` or `AssetAccessibility` compiled.

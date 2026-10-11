@@ -15,8 +15,16 @@ interface AssetStorage {
     fun putAsset(hash: String, bytes: ByteArray)
 }
 
+/** Storage that keeps verified clips as files a player can open. Without it, clips resolve to the poster. */
+interface AssetVideoStorage {
+    /** The cached clip for [hash], or null. The client verifies its bytes before every use. */
+    fun getVideo(hash: String): File?
+    /** Stores verified clip bytes and returns their file. */
+    fun putVideo(hash: String, bytes: ByteArray): File
+}
+
 /** State and cache roots must be app-private. State belongs in durable, non-backed-up storage. */
-class FileAssetStorage(private val stateRoot: File, private val cacheRoot: File, private val config: PublicConfig) : AssetStorage {
+class FileAssetStorage(private val stateRoot: File, private val cacheRoot: File, private val config: PublicConfig) : AssetStorage, AssetVideoStorage {
     private val directory = File(stateRoot, config.namespace)
     private val cache = File(cacheRoot, config.namespace)
     private val stateFile = File(directory,"state.json")
@@ -59,7 +67,7 @@ class FileAssetStorage(private val stateRoot: File, private val cacheRoot: File,
             ?.forEach { entry ->
                 try {
                     val content = readBounded(entry,Limits.ASSET_BYTES)
-                    if(sha256(content) == entry.name) putCachedAsset(entry.name,content)
+                    if(sha256(content) == entry.name) putCachedEntry(entry.name,content)
                 } catch(_: Exception) { /* A cache miss is safe; preserve the legacy entry. */ }
             }
     }
@@ -84,18 +92,31 @@ class FileAssetStorage(private val stateRoot: File, private val cacheRoot: File,
             readBounded(f,Limits.ASSET_BYTES).also { f.setLastModified(System.currentTimeMillis()) }
         } catch (_: Exception) { f.delete(); null }
     }
-    override fun putAsset(hash: String, bytes: ByteArray) = locked {
+    override fun putAsset(hash: String, bytes: ByteArray) { locked {
         require(hashPattern.matches(hash) && bytes.size <= Limits.ASSET_BYTES && sha256(bytes) == hash) { "Invalid cache entry." }
-        putCachedAsset(hash,bytes)
+        putCachedEntry(hash,bytes)
+    } }
+    /** Clips are `<hash>.mp4` beside images, in the same namespace, budget and least-recently-used order. */
+    override fun getVideo(hash: String): File? = locked {
+        require(hashPattern.matches(hash))
+        File(cache,"$hash.mp4").takeIf { it.isFile }?.also { it.setLastModified(System.currentTimeMillis()) }
     }
-    private fun putCachedAsset(hash: String, bytes: ByteArray) {
+    override fun putVideo(hash: String, bytes: ByteArray): File = locked {
+        require(hashPattern.matches(hash) && bytes.size in 1..Limits.VIDEO_BYTES && sha256(bytes) == hash) { "Invalid cache entry." }
+        putCachedEntry("$hash.mp4",bytes)
+    }
+    private fun putCachedEntry(name: String, bytes: ByteArray): File {
         cache.mkdirs(); check(cache.isDirectory)
-        atomicWrite(File(cache,hash),bytes)
-        val files = cache.listFiles()?.filter { it.isFile && hashPattern.matches(it.name) }?.sortedBy { it.lastModified() }?.toMutableList() ?: mutableListOf()
-        var size = files.sumOf { it.length() }
-        while(files.size > Limits.CACHE_ENTRIES || size > Limits.CACHE_BYTES) {
-            val first = files.removeAt(0); size -= first.length(); check(first.delete()) { "Could not enforce cache bound." }
+        val entry = File(cache,name)
+        atomicWrite(entry,bytes)
+        val files = cache.listFiles()?.filter { it.isFile && (hashPattern.matches(it.name) || videoPattern.matches(it.name)) }?.toMutableList() ?: mutableListOf()
+        var size = files.sumOf { it.length() }; var count = files.size
+        // The entry just written is never the one evicted, even when modification times tie.
+        val oldest = files.filter { it.name != name }.sortedBy { it.lastModified() }.toMutableList()
+        while(count > Limits.CACHE_ENTRIES || size > Limits.CACHE_BYTES) {
+            val first = oldest.removeAt(0); size -= first.length(); count--; check(first.delete()) { "Could not enforce cache bound." }
         }
+        return entry
     }
     private fun atomicWrite(file: File, bytes: ByteArray) {
         val temp = File(file.parentFile,"${file.name}.tmp")
@@ -104,13 +125,17 @@ class FileAssetStorage(private val stateRoot: File, private val cacheRoot: File,
             Files.move(temp.toPath(),file.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING)
         } finally { temp.delete() }
     }
-    private fun readBounded(file: File, max: Int): ByteArray {
-        require(file.length() <= max) { "Stored file exceeds its byte bound." }
-        file.inputStream().use { input ->
-            val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
-            while(true) { val n=input.read(buffer); if(n < 0) break; require(out.size()+n <= max); out.write(buffer,0,n) }
-            return out.toByteArray()
-        }
+    companion object {
+        private val locks = ConcurrentHashMap<String,Any>()
+        private val videoPattern = Regex("[a-f0-9]{64}\\.mp4")
     }
-    companion object { private val locks = ConcurrentHashMap<String,Any>() }
+}
+
+internal fun readBounded(file: File, max: Int): ByteArray {
+    require(file.length() <= max) { "Stored file exceeds its byte bound." }
+    file.inputStream().use { input ->
+        val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
+        while(true) { val n=input.read(buffer); if(n < 0) break; require(out.size()+n <= max); out.write(buffer,0,n) }
+        return out.toByteArray()
+    }
 }

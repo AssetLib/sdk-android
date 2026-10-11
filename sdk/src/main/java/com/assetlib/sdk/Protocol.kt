@@ -21,6 +21,7 @@ object Limits {
     const val HISTORY = 8
     const val SVG_BYTES = 256 * 1024
     const val DECODED_PIXELS = 16_777_216L
+    const val VIDEO_BYTES = 4 * 1024 * 1024
 }
 
 internal val json = Json { isLenient = false; allowSpecialFloatingPointValues = false }
@@ -142,11 +143,14 @@ enum class AssetAppearance(val wireValue: String) { LIGHT("light"), DARK("dark")
 internal data class Candidate(val hash: String, val url: String, val bytes: Int, val mime: String = "image/webp", val width: Int? = null, val height: Int? = null)
 internal data class Variants(val appearance: List<AssetAppearance> = emptyList(), val arm: List<String> = emptyList())
 internal data class Cell(val appearance: AssetAppearance?, val arm: String?, val image: Slot)
+internal data class Video(val hash: String, val url: String, val bytes: Int, val width: Int, val height: Int, val durationMs: Int, val frameRate: Double)
 internal data class Slot(val key: String, val width: Int, val height: Int, val assetId: String, val hash: String, val url: String, val bytes: Int, val renditions: List<Candidate> = emptyList(), val accessibility: AssetAccessibility? = null,
-                         val variants: Variants? = null, val cells: List<Cell> = emptyList(), val rendering: String = AssetRendering.Original.wireValue)
+                         val variants: Variants? = null, val cells: List<Cell> = emptyList(), val rendering: String = AssetRendering.Original.wireValue,
+                         val video: Video? = null)
 internal data class Release(val sequence: Long, val payload: String, val envelope: JsonObject, val slots: List<Slot>)
 
 internal val nativeFormats = listOf("image/webp", "image/png")
+internal const val VIDEO_MIME = "video/mp4"
 internal fun validateFormats(formats: List<String>) {
     require(formats.isNotEmpty() && formats.size == formats.distinct().size && formats.all { it in nativeFormats } && "image/webp" in formats) {
         "Native formats must be a unique list of WebP and/or PNG including WebP; native SVG rendering is unsupported."
@@ -202,6 +206,24 @@ private fun parseImage(s: JsonObject, key: String, w: Int, h: Int, config: Publi
     return Slot(key,w,h,id,hash,url,size,renditions,accessibility,rendering=rendering)
 }
 
+// h264-loop-v1, base slots only. The console validates the clip itself; clients check its header after download.
+private fun parseVideo(s: JsonObject, slot: Slot, config: PublicConfig, hasVideoSchema: Boolean): Video? {
+    if("video" !in s) return null
+    require(hasVideoSchema) { "Video requires videoSchemaVersion 1." }
+    require("animation" !in s) { "A placement cannot carry both an animation and a video." }
+    val v = s["video"] as? JsonObject ?: error("Invalid video.")
+    require(v.string("format") == "mp4" && v.string("profile") == "h264-loop-v1" && v.string("mime") == VIDEO_MIME) { "Unsupported video format." }
+    val hash = v.string("sha256"); require(hashPattern.matches(hash)) { "Invalid video hash." }
+    val bytes = v.number("bytes",1,Limits.VIDEO_BYTES.toLong()).toInt()
+    val w = v.number("width",16,1280).toInt(); val h = v.number("height",16,1280).toInt()
+    require(w % 2 == 0 && h % 2 == 0 && w.toLong()*h <= 921_600 && w.toLong()*slot.height == h.toLong()*slot.width) { "Video dimensions or aspect ratio are invalid." }
+    val duration = v.number("durationMs",1000,10_000).toInt()
+    val rate = (v["frameRate"] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull ?: error("Invalid frameRate.")
+    require(rate.isFinite() && rate >= 1.0 && rate <= 30.0) { "Invalid frameRate." }
+    val url = scopedAssetUrl(v.string("url"),URI(config.manifestUrl),"/api/delivery/${config.orgId}/${config.appId}/assets/${slot.assetId}/videos/$hash")
+    return Video(hash,url,bytes,w,h,duration,rate)
+}
+
 private fun parseAppearance(value: String): AssetAppearance = AssetAppearance.entries.firstOrNull { it.wireValue == value }
     ?: error("Invalid appearance variant.")
 
@@ -243,6 +265,7 @@ private fun parseCells(s: JsonObject, slot: Slot, variants: Variants?, config: P
         require((appearance == null || appearance in variants.appearance) && (arm == null || arm in variants.arm)) { "Variant cell coordinates must be declared." }
         require(coordinates.add(arm to appearance)) { "Duplicate variant cell coordinates." }
         require("defaultState" !in cell) { "Variant cells use the placement default state." }
+        require("video" !in cell) { "Video is allowed on base slots only." }
         // Native clients deliberately ignore slot and cell states, including their image descriptors.
         Cell(appearance,arm,parseImage(cell,slot.key,slot.width,slot.height,config,hasRenditionSchema))
     }
@@ -263,6 +286,9 @@ internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
     if(hasRenditionSchema) p.number("renditionSchemaVersion",1,1)
     val hasVariantSchema = "variantSchemaVersion" in p
     if(hasVariantSchema) p.number("variantSchemaVersion",1,1)
+    // Animation fields stay ignored, but a video extension is checked exactly.
+    val hasVideoSchema = "videoSchemaVersion" in p
+    if(hasVideoSchema) p.number("videoSchemaVersion",1,1)
     require(p.string("orgId") == config.orgId && p.string("appId") == config.appId && p.string("environment") == config.environment) { "Unsupported or cross-app manifest." }
     val seq = p.number("sequence",1,Int.MAX_VALUE.toLong())
     Instant.parse(p.string("createdAt"))
@@ -276,7 +302,7 @@ internal fun verifyEnvelope(o: JsonObject, config: PublicConfig): Release {
         val w = s.number("width",1,8192).toInt(); val h = s.number("height",1,8192).toInt()
         val slot = parseImage(s,key,w,h,config,hasRenditionSchema)
         val variants = parseVariants(s,hasVariantSchema)
-        slot.copy(variants=variants,cells=parseCells(s,slot,variants,config,hasRenditionSchema))
+        slot.copy(variants=variants,cells=parseCells(s,slot,variants,config,hasRenditionSchema),video=parseVideo(s,slot,config,hasVideoSchema))
     }
     return Release(seq,text,o,slots)
 }

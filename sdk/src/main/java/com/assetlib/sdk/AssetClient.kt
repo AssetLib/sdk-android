@@ -1,5 +1,6 @@
 package com.assetlib.sdk
 
+import java.io.File
 import java.util.Collections
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -71,7 +72,7 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
         syncState()
         try {
             check(storageFailure == null) { storageFailure!! }
-            val bytes = transport.get(config.manifestUrl,Limits.MANIFEST_BYTES)
+            val bytes = transport.get(config.manifestUrl,Limits.MANIFEST_BYTES,"application/json")
             require(bytes.size <= Limits.MANIFEST_BYTES)
             val release = verifyEnvelope(objectJson(strictUtf8(bytes),Limits.MANIFEST_BYTES),config)
             syncState(); check(storageFailure == null) { storageFailure!! }
@@ -173,7 +174,7 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
                         val cachedInfo = cached?.let(::valid)
                         if(cached != null && cachedInfo != null) return@withLock resolved(AssetSource.CACHE,cached,cachedInfo,if(index == 0) "Verified artwork from this device." else "Using earlier verified release ${release.sequence}. $reason")
                         if(index != 0) continue // Every candidate of a historical release is cache-only.
-                        val bytes = transport.get(candidate.url,candidate.bytes)
+                        val bytes = transport.get(candidate.url,candidate.bytes,candidate.mime)
                         val info = valid(bytes) ?: error("Artwork bytes, format, or pixel dimensions do not match the signed release.")
                         storage.putAsset(candidate.hash,bytes)
                         return@withLock resolved(AssetSource.REMOTE,bytes,info,"Downloaded and verified artwork.")
@@ -182,6 +183,50 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
             }
             ResolvedAsset(AssetSource.BUNDLE,null,decision.message("Using bundled artwork. $reason"),accessibility=ref.bundledAccessibility,armSource=decision.source)
         }
+    }
+    private class VideoStep(val result: ResolvedVideo? = null, val download: Video? = null)
+    private class ClipDownload(val hash: String, val bytes: ByteArray?, val failure: String?)
+    /**
+     * A verified local clip for the placement's base slot, or the poster outcome. Explicit: [resolve] never
+     * downloads a clip. Only the latest accepted release downloads; retained releases are cache-only.
+     */
+    suspend fun resolveVideo(ref: AssetRef): ResolvedVideo = withContext(Dispatchers.IO) {
+        val first = mutex.withLock { videoStep(ref,null) }
+        val video = first.download ?: return@withContext first.result!!
+        // Outside the mutex, so a slow clip never stalls image resolution on this client.
+        val download = try {
+            val bytes = transport.get(video.url,video.bytes,VIDEO_MIME)
+            if(validClip(bytes,video)) ClipDownload(video.hash,bytes,null)
+            else ClipDownload(video.hash,null,"Clip bytes or header do not match the signed release.")
+        } catch(e: Exception) { if(e is CancellationException) throw e; ClipDownload(video.hash,null,e.message ?: "Clip unavailable.") }
+        mutex.withLock { videoStep(ref,download).result!! }
+    }
+    // Walks releases newest first. The first release with this placement but no compatible clip ends the walk.
+    private fun videoStep(ref: AssetRef, download: ClipDownload?): VideoStep {
+        syncState()
+        fun poster(message: String) = VideoStep(ResolvedVideo(AssetVideoSource.POSTER,null,"Showing the poster. $message"))
+        storageFailure?.let { return poster(it) }
+        val files = storage as? AssetVideoStorage ?: return poster("This storage cannot keep clip files.")
+        var reason = download?.failure ?: "No verified clip is available."
+        for((index,release) in state.history.withIndex()) {
+            val slot = release.slots.find { it.key == ref.key && it.width == ref.width && it.height == ref.height } ?: continue
+            val video = slot.video?.takeIf { slot.rendering == ref.rendering.wireValue }
+                ?: return poster(if(index == 0) "The current release has no clip for this placement." else reason)
+            fun found(source: AssetVideoSource, file: File, message: String) = VideoStep(ResolvedVideo(source,release.sequence,message,file,
+                video.width,video.height,video.durationMs,video.frameRate))
+            // The OS may evict or damage cached files at any time, so every use re-verifies the bytes.
+            val cached = try { files.getVideo(video.hash)?.takeIf { validClip(readBounded(it,Limits.VIDEO_BYTES),video) } }
+                catch(e: Exception) { if(e is CancellationException) throw e; null }
+            if(cached != null) return found(AssetVideoSource.CACHE,cached,
+                if(index == 0) "Verified clip from this device." else "Using the clip from earlier verified release ${release.sequence}. $reason")
+            if(index != 0) continue // Retained releases are cache-only.
+            if(download == null) return VideoStep(download=video)
+            if(download.hash != video.hash) reason = "The release changed while the clip downloaded."
+            else if(download.bytes != null) try {
+                return found(AssetVideoSource.REMOTE,files.putVideo(video.hash,download.bytes),"Downloaded and verified clip.")
+            } catch(e: Exception) { if(e is CancellationException) throw e; reason = e.message ?: "The clip could not be stored." }
+        }
+        return poster(reason)
     }
     /** Retain the original positional supportedFormats call shape. */
     suspend fun resolve(ref: AssetRef, targetPixels: AssetPixelSize, supportedFormats: List<String>): ResolvedAsset =

@@ -25,7 +25,8 @@ node scripts/prepare-release.mjs   # copies the release AAR to build/release/ an
 - `sdk/src/main/java/com/assetlib/sdk/AssetClient.kt`: `initialize`, `refresh`, `resolve` under one `Mutex`; decision callback; `ResolvedAsset`, `ClientStatus`.
 - `Protocol.kt`: `PublicConfig` parsing, `Limits`, Ed25519 via Bouncy Castle `rfc8032` (no JCA provider), manifest, rendition, and variant validation, storage `namespace`.
 - `Storage.kt`: `FileAssetStorage` (process and file locks, atomic replace, one-time namespace migration, bounded cache).
-- `Transport.kt`: OkHttp with redirects off, no cookies, call timeout (default 8,000 ms).
+- `Transport.kt`: OkHttp with redirects off, no cookies, call timeout (default 8,000 ms; `video/mp4` calls default 30,000 ms).
+- `Video.kt`: `ResolvedVideo`, `AssetVideoSource`, and the bounded MP4 header walk. `AssetClient.resolveVideo` downloads outside the mutex and stores and returns under it.
 - `AndroidAssets.kt`: factory (state in `noBackupFilesDir`, cache in `cacheDir`) and `BitmapFactory` decoding.
 - `sdk/src/test/java/...`: JVM unit tests. `FixtureDecoder.kt` replaces `BitmapFactory` with a fixture metadata reader, so JVM tests do not exercise the Android decoder.
 - `sdk/src/test/resources/fixtures/`: shared contract corpus (next section).
@@ -33,7 +34,7 @@ node scripts/prepare-release.mjs   # copies the release AAR to build/release/ an
 
 ## Shared contract corpus
 
-- `sdk/src/test/resources/fixtures/` is a byte-for-byte copy of the signed interoperability corpus that the Swift SDK vendors at `Tests/AssetLibTests/Fixtures/` and that is also run against the JavaScript SDK where the corpus is generated: 115 signed manifest cases (`cases.json` is the index, each case names its `production` or `staging` config), 18 variant resolution entries, 6 stateful cases, 2 byte-failure cases, 4 rendition selections, and 10 rendering resolution cases (`rendering.json`).
+- `sdk/src/test/resources/fixtures/` is a byte-for-byte copy of the signed interoperability corpus that the Swift SDK vendors at `Tests/AssetLibTests/Fixtures/` and that is also run against the JavaScript SDK where the corpus is generated: 142 signed manifest cases (`cases.json` is the index, each case names its `production` or `staging` config), 18 variant resolution entries, 6 stateful cases, 2 byte-failure cases, 4 rendition selections, 10 rendering resolution cases (`rendering.json`), and 2 video resolution plus 2 video byte-failure cases (`video.json`). The corpus generator's `check-copy.mjs` (outside this repo) checks this directory byte for byte.
 - The corpus is generated outside this repo. Never hand-edit, re-sign, or reformat a fixture: signatures cover exact payload bytes, and outer JSON whitespace differs from the signed payload on purpose. A contract change lands in the corpus first; then replace the whole directory here and in sdk-swift in the same pass.
 - No CI step checks the copy against its source. A `diff -r` against the Swift repo's fixture directory should show only its local `README.txt`.
 - `keys/TEST_ONLY_*` is deliberately public test material. Never trust it outside tests.
@@ -47,7 +48,7 @@ node scripts/prepare-release.mjs   # copies the release AAR to build/release/ an
 - **Replay and rollback.** Sequences never decrease. Equal sequence with a different payload string is rejected, including reformatted or Unicode-normalized JSON. Rollback is a new, higher sequence.
 - **Durable state.** Persist a verified higher release before exposing it. State is re-synced under the mutex for every operation. Unverifiable state fails closed to the bundle; never delete it automatically. Clearing app data is the only reset.
 - **Storage namespace** is SHA-256 of origin, org, app, and environment (`PublicConfig.namespace`). Staging and production stay isolated. Changing the formula strands replay floors and caches; it requires a verified one-time migration like `legacyNamespaces` plus the `legacy-migration.complete` marker, with `NamespaceTest` extended.
-- **Cache and offline restart.** Cached bytes are re-verified on read (length, SHA-256, decoded MIME and dimensions). Only the latest accepted release may download; older retained releases are cache-only fallbacks.
+- **Cache and offline restart.** Cached bytes are re-verified on read (length, SHA-256, decoded MIME and dimensions; for clips, the MP4 header check). Only the latest accepted release may download; older retained releases are cache-only fallbacks. Clips are `<sha256>.mp4` in the same cache budget, and ordinary image resolution never downloads one.
 - **Renditions.** Smallest raster meeting the target, else largest; ties by byte length, then hash; the legacy WebP slot is always the last candidate. Format lists must be unique and include `image/webp`. SVG metadata is validated, never fetched.
 - **Variants.** Resolution order: (arm, appearance), (arm, any), (control, appearance), legacy slot. Never borrow another arm's artwork. Native clients ignore `states`.
 - **Rendering.** The selected descriptor's `rendering` (absent = original) must equal `AssetRef.rendering`. A mismatch or well-formed unknown value is incompatible like wrong dimensions: no cache read, no download, for retained releases too. Malformed values reject the manifest. `RenderingTest` covers this.
@@ -57,7 +58,7 @@ node scripts/prepare-release.mjs   # copies the release AAR to build/release/ an
 
 ## Public API and compatibility
 
-- Public surface: `AssetClient`, `AndroidAssets`, `PublicConfig`, `AssetRef`, `AssetRendering`, `AssetPixelSize`, `AssetImageInfo`, `AssetAppearance`, `AssetArmSource`, `AssetSource`, `AssetAccessibility`, `ResolvedAsset`, `ClientStatus`, `RefreshResult`, `Limits`, `sha256`, the `AssetStorage` and `AssetTransport` interfaces, `FileAssetStorage`, `HttpsTransport`.
+- Public surface: `AssetClient`, `AndroidAssets`, `PublicConfig`, `AssetRef`, `AssetRendering`, `AssetPixelSize`, `AssetImageInfo`, `AssetAppearance`, `AssetArmSource`, `AssetSource`, `AssetAccessibility`, `ResolvedAsset`, `ResolvedVideo`, `AssetVideoSource`, `ClientStatus`, `RefreshResult`, `Limits`, `sha256`, the `AssetStorage`, `AssetVideoStorage` and `AssetTransport` interfaces, `FileAssetStorage`, `HttpsTransport`.
 - Secondary constructors on `AssetClient`, the second `AndroidAssets.client` overload, and the three-argument `resolve` overload exist to keep older call shapes compiling. Keep them. Add new parameters with defaults, after existing ones.
 - Adding a property to a public data class changes its JVM constructor signature even when Kotlin call sites still compile. Say so in RELEASE-NOTES.md ("recompile consuming applications").
 - Apps commit generated `AppAssets.kt` that calls `AssetRef(key, width, height, bundledAccessibility = AssetAccessibility(locale, mapOf(...)), rendering = AssetRendering.Template)`, with each named argument only when the catalog declares it. Keep it source-compatible.

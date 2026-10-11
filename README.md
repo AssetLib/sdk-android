@@ -150,10 +150,55 @@ Icon(
 
 `Icon` applies the same tint to the remote mask and to the VectorDrawable that `painterResource` loads, so switching between them keeps the color. Request `targetPixels` as logical size × density: without it, resolution asks for the logical size and selects a 1× mask on a denser screen.
 
+### Short looping video
+
+Unreleased: on `main` after 0.4.0-preview.1, not in a published AAR. Not verified on an emulator or a device.
+
+A placement's base slot can carry a short, muted, looping MP4 clip beside its required poster: H.264 `h264-loop-v1`, at most 1280 × 720 or 720 × 1280, 1–10 seconds, at most 4 MiB, in the placement's exact aspect ratio. `resolve` never downloads a clip; ask for it explicitly:
+
+```kotlin
+val video = client.resolveVideo(AppAssets.Travel.coast)
+// REMOTE or CACHE: video.file is a verified local .mp4. POSTER: show the placement's ordinary image or bundled fallback.
+```
+
+- Only the latest accepted release downloads a clip; earlier releases are cache-only. Before every use, including each cache read, the bytes must match the signed length and SHA-256 and pass a bounded header check: `ftyp` first, `moov` before the first `mdat`, no `moof`, and an `avc1` sample entry at the signed width and height.
+- The clip is stored as `<sha256>.mp4` in `cacheDir`, inside the same 50 MiB / 100-entry budget as images. The OS may delete it; the next call downloads it again while its release is current.
+- `HttpsTransport` gives `video/mp4` requests their own deadline, `videoTimeoutMillis` (default 30 seconds, 20 ms–30 seconds), so a slow clip falls back to the poster. The download runs outside the client's lock, so images keep resolving meanwhile.
+- Custom storage that does not implement `AssetVideoStorage` gets the poster.
+
+The AAR includes no player. In the app, Media3 1.11.x can play the file:
+
+```kotlin
+implementation("androidx.media3:media3-exoplayer:1.11.1")
+```
+
+```kotlin
+// "Remove animations" sets the animator duration scale to 0: keep the poster and do not autoplay.
+val reduceMotion = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+val file = video.file
+if (file != null && !reduceMotion) {
+    player = ExoPlayer.Builder(context).build().apply {
+        setVideoTextureView(textureView) // A plain TextureView over the poster, no controls.
+        addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() { posterView.isVisible = false }
+            override fun onPlayerError(error: PlaybackException) { posterView.isVisible = true }
+        })
+        setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+        repeatMode = Player.REPEAT_MODE_ONE
+        volume = 0f
+        prepare()
+        play()
+    }
+}
+// onStart: player?.play()   onStop: player?.pause()   when the view goes away: player?.release()
+```
+
+In Compose, `media3-ui-compose`'s `PlayerSurface` can replace the `TextureView`; add no controls. Play at most two clips at once and show the poster for the rest. Gapless looping and memory use have not been measured on any device.
+
 ## Verification and fallback
 
 - Exact UTF-8 signed payload bytes; pinned Ed25519 SPKI public key; `keyId` is the first 16 lowercase hex characters of SHA-256 of the exact PEM bytes.
-- HTTPS, exact organization/app delivery paths, no URL credentials/query/fragment, same-origin asset URLs, and no HTTP redirects. Default call/connect/read timeout 8 seconds (configurable 20 ms–30 seconds).
+- HTTPS, exact organization/app delivery paths, no URL credentials/query/fragment, same-origin asset URLs, and no HTTP redirects. Default call/connect/read timeout 8 seconds (configurable 20 ms–30 seconds); clips have their own, default 30 seconds (configurable 20 ms–30 seconds).
 - Schema, environment, release sequence, slot/rendition types and limits, asset byte count and SHA-256 are checked before use. Native image validation checks PNG/WebP decode, at most 8,192 per edge, at most 16,777,216 pixels, and within 2% relative aspect-ratio tolerance. Logical placement dimensions need not equal delivered pixel dimensions; declared rendition pixel dimensions must match exactly.
 - The default storage locks and rechecks state across clients/processes before an atomic replacement. Lower sequences and different payload bytes reusing a sequence are rejected, including reordered/normalized equivalent JSON. Rollback is a **new higher sequence** publishing previous artwork.
 - Resolve uses the latest compatible cached image, then downloads that release's image, then tries earlier verified cached releases, then the host's bundle. It does not download historical fallback releases.
@@ -175,6 +220,6 @@ node --test scripts/codegen.test.mjs
 ASSETLIB_PUBLIC_CONFIG_FILE=/absolute/path/public-config.json ./gradlew :sdk:testDebugUnitTest --rerun-tasks
 ```
 
-The checked-in synthetic interop corpus covers 43 public-config cases with 39 signature verification expectations, 115 signed manifest cases, 18 variant resolution cases and 10 rendering resolution cases, including staging, UTF-8, key/signature tampering, invalid schema/URLs/renditions/accessibility/variant/rendering metadata, and stateful replay/equivocation. JVM tests load each case's configuration and every resolution entry. Unit tests additionally cover decision callbacks, cell selection through cache/restart/historical fallback, rendering matching through cache and retained releases without downloads, staging isolation, target selection, legacy fallback, locale lookup, description pairing across remote/cache/bundle states, concurrent writers, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
+The checked-in synthetic interop corpus covers 43 public-config cases with 39 signature verification expectations, 142 signed manifest cases, 18 variant resolution cases, 10 rendering resolution cases and 4 short looping video cases, including staging, UTF-8, key/signature tampering, invalid schema/URLs/renditions/accessibility/variant/rendering/video metadata, and stateful replay/equivocation. JVM tests load each case's configuration and every resolution entry. Unit tests additionally cover decision callbacks, cell selection through cache/restart/historical fallback, rendering matching through cache and retained releases without downloads, clip verification, header checks, cache-only retained clips, eviction and download again, the clip deadline and `Accept` header over local TLS, staging isolation, target selection, legacy fallback, locale lookup, description pairing across remote/cache/bundle states, concurrent writers, cache corruption and limits. Instrumented tests decode actual PNG/WebP data, reject incorrect signed dimensions/MIME and invalid PNG data, and exercise an independent offline client. They do not establish performance on all Android devices. The additional Android regression fixtures can be regenerated with `node scripts/generate-native-rendition-tests.mjs`; their signing seed is public test data and must never be used in a service.
 
 Only public artwork should be published to the hosted preview: delivery URLs are publicly retrievable. It is bounded preview infrastructure. See `SECURITY.md` for trust limits.
