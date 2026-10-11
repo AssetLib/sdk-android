@@ -237,6 +237,19 @@ class VideoTest {
         assertEquals(1, delivery.videoRequests.size)
     }
 
+    @Test fun theCurrentReleaseDecidesWhetherThePlacementHasAClip() = withClient(bytes("manifests/valid-video-seq9.json")) { client, delivery, dir ->
+        assertEquals(AssetVideoSource.REMOTE, client.resolveVideo(ref).source)
+        // Release 10 carries the key and its clip only at other dimensions, so release 9's cached clip is not played.
+        val source = payload("valid-video-seq9.json")
+        val resized = patch(source["slots"]!!.jsonArray.single().jsonObject, "width" to JsonPrimitive(600), "height" to JsonPrimitive(450))
+        delivery.manifest = signed(patch(source, "sequence" to JsonPrimitive(10), "slots" to JsonArray(listOf(resized))))
+        assertNull(client.refresh().error)
+        val video = client.resolveVideo(ref)
+        assertEquals(AssetVideoSource.POSTER, video.source); assertTrue(video.message, video.message.contains("current release"))
+        assertTrue(cachedClip(dir).exists())
+        assertEquals(1, delivery.videoRequests.size)
+    }
+
     @Test fun evictionCorruptionAndRedownload() = withClient(bytes("manifests/valid-video-seq9.json")) { client, delivery, dir ->
         val file = client.resolveVideo(ref).file!!
         assertEquals(AssetVideoSource.CACHE, client.resolveVideo(ref).source)

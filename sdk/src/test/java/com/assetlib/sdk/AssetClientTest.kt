@@ -31,7 +31,7 @@ class AssetClientTest {
             val result=runCatching { verifyEnvelope(envelope(name),caseConfig) }
             assertEquals("$name: ${result.exceptionOrNull()}",c.string("verification") == "accept",result.isSuccess)
         }
-        assertEquals(142,cases.size)
+        assertEquals(149,cases.size)
     }
     @Test fun sharedResolutionCorpus() = runBlocking {
         val index=objectJson(text("cases.json"),100000)

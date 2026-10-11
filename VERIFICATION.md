@@ -1,3 +1,14 @@
+# Verification — October 11, 2026: placement membership (unreleased, `main`)
+
+Local JVM checks on macOS with JDK 17, on branch `placement-membership`:
+
+- The fixture directory is byte-identical to the shared corpus revision of 2026-10-11 (`check-copy.mjs`: 235/235 files), now with 149 signed manifest cases and `history.json`.
+- Before the change, `./gradlew :sdk:testDebugUnitTest --tests 'com.assetlib.sdk.HistoryTest'`: `sharedHistoryCorpus` failed exactly `removed-key-online`, `removed-key-offline` (both returned `CACHE` from release 11), `video-placement-removed-gives-poster` (`CACHE` clip from release 9) and `video-placement-removed-poster-image-is-bundled` (`CACHE` from release 9); the six other cases, including the four controls, passed. With only the `resolve` change, the clip case and `VideoTest.theCurrentReleaseDecidesWhetherThePlacementHasAClip` still failed.
+- After both changes, `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease`: exit 0. JVM unit tests: 119 run, 0 failures, 1 skipped (the optional hosted test). `HistoryTest` adds 4 (all 10 corpus cases with request counts, durable state and seeded cache checks; bundled accessibility and an explicit arm; no decision callback; an offline restart), and `VideoTest` adds 1. `RenderingTest.cachedAndHistoricalDescriptorsFollowTheRenderingRule` and `aCurrentReleaseWithoutAClipGivesThePoster` are unchanged and pass. Lint: 0 errors, 9 warnings, all newer-version notices.
+- `node --test scripts/codegen.test.mjs`: 5 passed.
+
+Not run: instrumented tests, any emulator or device check, and a hosted restore with a native app.
+
 # Short looping video on an Android 16 emulator — October 11, 2026
 
 An emulator run, not a device test. The test app used the released `assetlib-android-0.5.0-preview.1.aar`, whose SHA-256 `b31e8508…3039` matched the release's `SHA256SUMS`, with Media3 1.11.1 (ExoPlayer, `REPEAT_MODE_ONE`, volume 0, no controls). It ran on a dedicated AVD: Android 16 / SDK 36, google_apis_playstore arm64-v8a, decoder `c2.goldfish.h264.decoder`. It played a clip that a local console with clip support had validated, signed and published: 1280×720, H.264 Main@3.1, 30 fps, 4 s, no audio, with a drawn frame counter.
