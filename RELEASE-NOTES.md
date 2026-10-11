@@ -1,4 +1,4 @@
-# Unreleased
+# 0.5.0-preview.1 — October 11, 2026
 
 - Adds short looping video. `AssetClient.resolveVideo(ref)` returns `ResolvedVideo` (`source` `REMOTE`, `CACHE` or `POSTER`, `sequence`, `message`, `file`, `width`, `height`, `durationMs`, `frameRate`) for a placement's base slot. `resolve` never downloads a clip. Only the latest accepted release downloads; retained releases are cache-only. As for Lottie animations, a missing current clip returns `POSTER`, and a current clip that cannot be used first recovers from the newest verified cached clip of an earlier release. Every use, including each cache read, checks the signed length and SHA-256 and a bounded header walk (`ftyp` first, `moov` before the first `mdat`, no `moof`, an `avc1` sample entry at the signed size). Any failure returns `POSTER`, and the app shows the ordinary image or its bundled fallback.
 - Validates `videoSchemaVersion` and `video`. The version, when present, must be exactly 1 (null or any other value rejects the manifest); `video` without it, on a variant cell, or beside `animation` rejects the manifest. The descriptor must be `mp4` / `h264-loop-v1` / `video/mp4` with a lowercase hex `sha256`, 1–4,194,304 `bytes`, even `width` and `height` of 16–1280 with at most 921,600 pixels in exactly the slot's aspect ratio, integer `durationMs` 1,000–10,000, a finite numeric `frameRate` 1–30, and the exact same-origin path `/api/delivery/{orgId}/{appId}/assets/{assetId}/videos/{sha256}`. `animationSchemaVersion` stays ignored.
@@ -15,6 +15,8 @@ Recompile consuming applications when replacing the AAR. New public types (`Reso
 - A package segment that is a Kotlin hard keyword, such as `is` or `fun`, is escaped with backticks; the unescaped `package` line did not compile.
 - Any other catalog generates byte-identical output. SDK sources and the AAR are unchanged.
 
+
+Validation on October 11, 2026: codegen tests (5), 114 JVM unit tests with the optional hosted test skipped, lint, and the release build passed (`./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease`, JDK 17). `assetlib-android-0.5.0-preview.1.aar` SHA-256 `b31e8508e7e039c1920ae80e944edc606283d0272f09d092d039236cc8333039` (macOS build). No emulator or device run, and no Media3 playback, is claimed. See VERIFICATION.md.
 # 0.4.0-preview.1 — October 10, 2026
 
 - Adds tintable icons. `AssetRef` gains `rendering: AssetRendering = AssetRendering.Original` as its last parameter; `AssetRendering` is `Original` or `Template`.

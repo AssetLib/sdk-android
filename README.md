@@ -1,6 +1,6 @@
 # Assetlib Android SDK
 
-Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.4.0-preview.1** adds tintable icon placements, on top of the bounded public configuration and signing-key sets shared across the SDKs. It includes staging configurations, appearance and arm variant cells, an app-supplied arm decision callback, localized artwork descriptions, and demand-sized PNG/WebP renditions. It remains a developer preview, not a production support commitment.
+Native Kotlin client for signed Assetlib image releases. Android 8.0/API 26+, Kotlin coroutines, ordinary Android `Bitmap` and Compose `Image`. Version **0.5.0-preview.1** adds short looping video clips beside a poster, after tintable icon placements in 0.4.0, on top of the bounded public configuration and signing-key sets shared across the SDKs. It includes staging configurations, appearance and arm variant cells, an app-supplied arm decision callback, localized artwork descriptions, and demand-sized PNG/WebP renditions. It remains a developer preview, not a production support commitment.
 
 [Console](https://console.assetlib.dev) · [Native travel demo](https://github.com/AssetLib/demo-android) · [JavaScript SDK](https://github.com/AssetLib/sdk-js)
 
@@ -8,10 +8,10 @@ The app owns its screens and bundled fallbacks. Assetlib changes artwork assigne
 
 ## Install the preview
 
-Download `assetlib-android-0.4.0-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.4.0-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
+Download `assetlib-android-0.5.0-preview.1.aar` from the [exact release](https://github.com/AssetLib/sdk-android/releases/tag/v0.5.0-preview.1), verify its SHA-256 against `SHA256SUMS`, and place it in your app's `libs/`. The demo contains a repeatable, hash-locked downloader. This AAR does not bundle dependencies; add these exact dependencies to your app:
 
 ```kotlin
-implementation(files("libs/assetlib-android-0.4.0-preview.1.aar"))
+implementation(files("libs/assetlib-android-0.5.0-preview.1.aar"))
 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 implementation("org.bouncycastle:bcprov-jdk18on:1.86")
@@ -152,7 +152,7 @@ Icon(
 
 ### Short looping video
 
-Unreleased: on `main` after 0.4.0-preview.1, not in a published AAR. Not verified on an emulator or a device.
+Since 0.5.0-preview.1. Not verified on an emulator or a device.
 
 A placement's base slot can carry a short, muted, looping MP4 clip beside its required poster: H.264 `h264-loop-v1`, at most 1280 × 720 or 720 × 1280, 1–10 seconds, at most 4 MiB, in the placement's exact aspect ratio. `resolve` never downloads a clip; ask for it explicitly:
 

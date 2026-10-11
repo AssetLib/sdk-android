@@ -1,4 +1,6 @@
-# Verification — October 10, 2026: short looping video (branch `feat/looping-video`, unreleased)
+# Verification — October 11, 2026: release v0.5.0-preview.1 (short looping video)
+
+Release AAR `assetlib-android-0.5.0-preview.1.aar`, SHA-256 `b31e8508e7e039c1920ae80e944edc606283d0272f09d092d039236cc8333039`, built on macOS with JDK 17 by `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease` (114 tests, 0 failures, 1 skipped; lint clean) and `node scripts/prepare-release.mjs`. Earlier checks on branch `feat/looping-video`:
 
 - The fixture directory is byte-identical to the generated shared corpus (`check-copy.mjs`: 227/227 files), now with 142 signed manifest cases, `video.json` and the `loop.mp4` fixtures.
 - `./gradlew :sdk:testDebugUnitTest :sdk:lint` with JDK 17: exit 0. JVM unit tests: 114 run, 0 failures, 1 skipped (the optional hosted test). `VideoTest` adds 12: every video manifest case, descriptor edges, the header walker, the `video.json` resolution and byte-failure cases, no clip download from image resolution, cache-only retained releases, recovery from an older verified cached clip when the current clip fails (hash, eviction while offline), the poster when the current release has no clip, eviction and corruption with download again, storage without file support, image resolution during a blocked clip download, and the clip deadline and `Accept` header against a local TLS `MockWebServer`. Lint: 0 errors, 9 warnings, all newer-dependency notices.
