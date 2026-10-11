@@ -301,13 +301,17 @@ class VideoTest {
 
             val shortImages = HttpsTransport(timeoutMillis = 200, videoTimeoutMillis = 5000)
             slow(); assertTrue(fetch(shortImages, "image/webp").isFailure)
-            assertEquals("image/webp", server.takeRequest().getHeader("Accept"))
             slow(); assertEquals("clip", fetch(shortImages, VIDEO_MIME).getOrThrow().decodeToString())
-            assertEquals(VIDEO_MIME, server.takeRequest().getHeader("Accept"))
 
             val shortVideo = HttpsTransport(timeoutMillis = 5000, videoTimeoutMillis = 200)
             slow(); assertTrue(fetch(shortVideo, VIDEO_MIME).isFailure)
             slow(); assertEquals("clip", fetch(shortVideo, "image/webp").getOrThrow().decodeToString())
+
+            // A 200 ms call can time out during the TLS handshake on a slow runner, before its
+            // request reaches the server, so read only the requests that arrived, with a bound.
+            val accepts = generateSequence { server.takeRequest(2, TimeUnit.SECONDS) }.map { it.getHeader("Accept") }.toList()
+            assertTrue("video request sends Accept: video/mp4", VIDEO_MIME in accepts)
+            assertTrue("image request sends Accept: image/webp", "image/webp" in accepts)
         }
         assertEquals(listOf(8000, 30000), HttpsTransport().let { listOf(it.clientFor("image/webp").callTimeoutMillis, it.clientFor(VIDEO_MIME).callTimeoutMillis) })
         assertEquals(30000, HttpsTransport(5000).clientFor(VIDEO_MIME).callTimeoutMillis)
