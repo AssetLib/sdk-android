@@ -161,7 +161,7 @@ val video = client.resolveVideo(AppAssets.Travel.coast)
 // REMOTE or CACHE: video.file is a verified local .mp4. POSTER: show the placement's ordinary image or bundled fallback.
 ```
 
-- Only the latest accepted release downloads a clip; earlier releases are cache-only. Before every use, including each cache read, the bytes must match the signed length and SHA-256 and pass a bounded header check: `ftyp` first, `moov` before the first `mdat`, no `moof`, and an `avc1` sample entry at the signed width and height.
+- Only the latest accepted release downloads a clip; earlier releases are cache-only. If the newest release with the placement has no clip, the result is the poster. If its clip cannot be used, the newest verified cached clip of that placement from an earlier release is used, else the poster. Before every use, including each cache read, the bytes must match the signed length and SHA-256 and pass a bounded header check: `ftyp` first, `moov` before the first `mdat`, no `moof`, and an `avc1` sample entry at the signed width and height.
 - The clip is stored as `<sha256>.mp4` in `cacheDir`, inside the same 50 MiB / 100-entry budget as images. The OS may delete it; the next call downloads it again while its release is current.
 - `HttpsTransport` gives `video/mp4` requests their own deadline, `videoTimeoutMillis` (default 30 seconds, 20 ms–30 seconds), so a slow clip falls back to the poster. The download runs outside the client's lock, so images keep resolving meanwhile.
 - Custom storage that does not implement `AssetVideoStorage` gets the poster.

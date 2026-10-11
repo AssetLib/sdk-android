@@ -197,6 +197,33 @@ class VideoTest {
         assertEquals(AssetVideoSource.CACHE, restarted.resolveVideo(ref).source)
     }
 
+    @Test fun anUnusableCurrentClipRecoversFromOlderCachedClips() = withClient(bytes("manifests/valid-video-seq9.json")) { client, delivery, dir ->
+        assertEquals(AssetVideoSource.REMOTE, client.resolveVideo(ref).source)
+        val url9 = delivery.videoRequests.single()
+        // Release 10 has no clip, so it is skipped once release 11's own clip cannot be used.
+        delivery.manifest = release(10, null); assertNull(client.refresh().error)
+        val tampered = bytes("assets/loop-tampered.mp4")
+        val current = clip(sha256(tampered))
+        delivery.manifest = release(11, current); assertNull(client.refresh().error)
+        // Hash failure: the body is release 9's clip, not release 11's.
+        val fromHistory = client.resolveVideo(ref)
+        assertEquals(AssetVideoSource.CACHE, fromHistory.source); assertEquals(9L, fromHistory.sequence)
+        assertEquals(cachedClip(dir), fromHistory.file)
+        // Release 11's clip downloads, then the OS evicts it while offline: the download fails and release 9's clip is used.
+        delivery.clipBody = tampered
+        assertEquals(11L, client.resolveVideo(ref).also { assertEquals(AssetVideoSource.REMOTE, it.source) }.sequence)
+        assertTrue(cachedClip(dir, current.string("sha256")).delete())
+        delivery.videoOffline = true
+        val offline = client.resolveVideo(ref)
+        assertEquals(AssetVideoSource.CACHE, offline.source); assertEquals(9L, offline.sequence)
+        assertTrue(offline.message, offline.message.contains("earlier verified release 9"))
+        assertEquals(1, delivery.videoRequests.count { it == url9 })
+        // Without a verified older clip, the result is the poster.
+        assertTrue(cachedClip(dir).delete())
+        assertEquals(AssetVideoSource.POSTER, client.resolveVideo(ref).source)
+        assertEquals(1, delivery.videoRequests.count { it == url9 })
+    }
+
     @Test fun aCurrentReleaseWithoutAClipGivesThePoster() = withClient(bytes("manifests/valid-video-seq9.json")) { client, delivery, dir ->
         assertEquals(AssetVideoSource.REMOTE, client.resolveVideo(ref).source)
         delivery.manifest = release(10, null)

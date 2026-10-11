@@ -201,17 +201,20 @@ class AssetClient(config: PublicConfig, private val storage: AssetStorage, priva
         } catch(e: Exception) { if(e is CancellationException) throw e; ClipDownload(video.hash,null,e.message ?: "Clip unavailable.") }
         mutex.withLock { videoStep(ref,download).result!! }
     }
-    // Walks releases newest first. The first release with this placement but no compatible clip ends the walk.
+    // Like Lottie: when the newest release with this placement has no compatible clip, the result is the poster.
+    // When its clip cannot be used, earlier releases' verified cached clips are tried newest first, without downloading.
     private fun videoStep(ref: AssetRef, download: ClipDownload?): VideoStep {
         syncState()
         fun poster(message: String) = VideoStep(ResolvedVideo(AssetVideoSource.POSTER,null,"Showing the poster. $message"))
         storageFailure?.let { return poster(it) }
         val files = storage as? AssetVideoStorage ?: return poster("This storage cannot keep clip files.")
         var reason = download?.failure ?: "No verified clip is available."
+        var newest = true
         for((index,release) in state.history.withIndex()) {
             val slot = release.slots.find { it.key == ref.key && it.width == ref.width && it.height == ref.height } ?: continue
             val video = slot.video?.takeIf { slot.rendering == ref.rendering.wireValue }
-                ?: return poster(if(index == 0) "The current release has no clip for this placement." else reason)
+            if(video == null) { if(newest) return poster("The newest release with this placement has no clip.") else continue }
+            newest = false
             fun found(source: AssetVideoSource, file: File, message: String) = VideoStep(ResolvedVideo(source,release.sequence,message,file,
                 video.width,video.height,video.durationMs,video.frameRate))
             // The OS may evict or damage cached files at any time, so every use re-verifies the bytes.
