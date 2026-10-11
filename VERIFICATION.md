@@ -1,4 +1,15 @@
-# Verification — October 11, 2026: placement membership (unreleased, `main`)
+# Verification — October 11, 2026: release v0.6.0-preview.1 (placement membership)
+
+Release AAR `assetlib-android-0.6.0-preview.1.aar`, SHA-256 `06cb00e4f7a04c5272eba392f27b01684a29a2069422cea0bbd0d86d6186dc67`, built on macOS with JDK 17 (Zulu 17.0.13) from a clean clone of `main` at `aa91e40` plus the release version strings:
+
+- `node native-contract/check-copy.mjs sdk/src/test/resources/fixtures` (workspace corpus): 235/235 files identical.
+- `node --test scripts/codegen.test.mjs`: 5 passed.
+- `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease`: exit 0. JVM unit tests: 119 run, 0 failures, 1 skipped (the optional hosted test); `HistoryTest` 4 run, 0 failures. Lint: 0 errors, 9 warnings.
+- `node scripts/prepare-release.mjs`: wrote the AAR above and `SHA256SUMS`.
+
+Not run: instrumented tests, any emulator or device check, and a hosted restore with a native app.
+
+# Verification — October 11, 2026: placement membership (`main`, before v0.6.0-preview.1)
 
 Local JVM checks on macOS with JDK 17, on branch `placement-membership`:
 
