@@ -7,6 +7,8 @@ Release AAR `assetlib-android-0.6.0-preview.1.aar`, SHA-256 `06cb00e4f7a04c5272e
 - `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease`: exit 0. JVM unit tests: 119 run, 0 failures, 1 skipped (the optional hosted test); `HistoryTest` 4 run, 0 failures. Lint: 0 errors, 9 warnings.
 - `node scripts/prepare-release.mjs`: wrote the AAR above and `SHA256SUMS`.
 
+After publication, on October 11, 2026: CI passed on `main` at the release commit `7e1590e` ([run 38184970461](https://github.com/AssetLib/sdk-android/actions/runs/38184970461)) and on the tag `v0.6.0-preview.1` ([run 38185059722](https://github.com/AssetLib/sdk-android/actions/runs/38185059722)). The Linux-built `assetlib-android-0.6.0-preview.1.aar` artifact from both runs has SHA-256 `06cb00e4f7a04c5272eba392f27b01684a29a2069422cea0bbd0d86d6186dc67`, the same as the published macOS-built file, and the tag run's `SHA256SUMS` is byte-identical to the published one. The published AAR, downloaded again from the release, matches its `SHA256SUMS`.
+
 Not run: instrumented tests, any emulator or device check, and a hosted restore with a native app.
 
 # Verification — October 11, 2026: placement membership (`main`, before v0.6.0-preview.1)
