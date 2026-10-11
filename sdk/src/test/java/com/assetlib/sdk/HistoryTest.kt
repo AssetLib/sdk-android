@@ -111,11 +111,18 @@ class HistoryTest {
             assertEquals(emptyList<String>(), delivery.requests)
         }
 
+    /** Release 5 declares arm b for travel.coast and release 12 drops the key. A decision taken from an older
+     *  release would call the callback; a resolution that walked history would return cached art from release 5. */
     @Test fun aRemovedPlacementNeverCallsTheDecisionCallback() {
         var calls = 0
-        withReleases(removal, cached = listOf("assets/coast.webp"), decide = { _, arms -> calls++; arms.first() }) { client, delivery, _ ->
-            val resolved = client.resolve(save)
-            assertEquals(AssetSource.BUNDLE, resolved.source); assertEquals(AssetArmSource.CONTROL, resolved.armSource)
+        val armed = listOf("manifests/valid-cells-arm-seq5.json", "manifests/history/coast-removed-seq12.json")
+        withReleases(armed, cached = listOf("assets/coast.webp", "assets/ridge.webp"), decide = { _, arms -> calls++; arms.first() }) { client, delivery, _ ->
+            val coast = AssetRef("travel.coast", 1200, 900)
+            val resolved = client.resolve(coast)
+            assertEquals(resolved.message, AssetSource.BUNDLE, resolved.source); assertEquals(AssetArmSource.CONTROL, resolved.armSource)
+            assertTrue(resolved.message, resolved.message.endsWith(removed))
+            val explicit = client.resolve(coast, arm = "b")
+            assertEquals(explicit.message, AssetSource.BUNDLE, explicit.source); assertEquals(AssetArmSource.EXPLICIT, explicit.armSource)
             assertEquals(emptyList<String>(), delivery.requests)
         }
         assertEquals(0, calls)
