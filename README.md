@@ -152,7 +152,7 @@ Icon(
 
 ### Short looping video
 
-Since 0.5.0-preview.1. Not verified on an emulator or a device.
+Since 0.5.0-preview.1. Checked on an Android 16 emulator on October 11, 2026, with Media3 1.11.1 in the app, against a local console: the clip was downloaded, verified and cached; it played muted and looping at 30 fps for 10 minutes (149 loops) with no upward memory trend and no re-download; it replayed from cache with the server unreachable; and the poster showed with animations removed. Not verified on a physical device or on Android 8–10.
 
 A placement's base slot can carry a short, muted, looping MP4 clip beside its required poster: H.264 `h264-loop-v1`, at most 1280 × 720 or 720 × 1280, 1–10 seconds, at most 4 MiB, in the placement's exact aspect ratio. `resolve` never downloads a clip; ask for it explicitly:
 

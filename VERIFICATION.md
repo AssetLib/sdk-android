@@ -1,3 +1,15 @@
+# Short looping video on an Android 16 emulator — October 11, 2026
+
+An emulator run, not a device test. The test app used the released `assetlib-android-0.5.0-preview.1.aar`, whose SHA-256 `b31e8508…3039` matched the release's `SHA256SUMS`, with Media3 1.11.1 (ExoPlayer, `REPEAT_MODE_ONE`, volume 0, no controls). It ran on a dedicated AVD: Android 16 / SDK 36, google_apis_playstore arm64-v8a, decoder `c2.goldfish.h264.decoder`. It played a clip that a local console with clip support had validated, signed and published: 1280×720, H.264 Main@3.1, 30 fps, 4 s, no audio, with a drawn frame counter.
+
+- `resolveVideo` returned `REMOTE` and the downloaded clip's SHA-256 matched the signed descriptor.
+- Playback advanced at 30 fps and the counter wrapped every 4 s.
+- **10-minute run:** 29.99 fps over 149 loops, with a maximum drift of 0.9 frames and exactly 1 clip request.
+- **Memory:** TOTAL PSS had no upward trend. The linear fit was −0.36 MB per minute overall, and +0.135 MB per minute within a 2.78 MB band after warm-up. Native Heap rose from 5.8 to 6.7 MB after 180 s, which is worth watching over longer runs.
+- **Offline:** with the HTTPS origin stopped, a relaunch played the clip from `CACHE`.
+- **Animations removed:** with `animator_duration_scale` at 0, the poster showed and no player was created. The setting was restored afterwards.
+- **Not verified:** physical devices, Android 8–10, gapless looping by eye, and the app-side two-player limit.
+
 # Verification — October 11, 2026: release v0.5.0-preview.1 (short looping video)
 
 Release AAR `assetlib-android-0.5.0-preview.1.aar`, SHA-256 `b31e8508e7e039c1920ae80e944edc606283d0272f09d092d039236cc8333039`, built on macOS with JDK 17 by `./gradlew :sdk:testDebugUnitTest :sdk:lint :sdk:assembleRelease` (114 tests, 0 failures, 1 skipped; lint clean) and `node scripts/prepare-release.mjs`. Earlier checks on branch `feat/looping-video`:
