@@ -108,7 +108,7 @@ Image(
 
 ### Typed references, generated offline
 
-Commit a catalog with stable placement keys, logical dimensions, and Kotlin symbols. For example:
+Commit a catalog with stable placement keys, a width and height, and Kotlin symbols. The width and height are a reference size, not a crop: they fix the aspect ratio every published image must match, and they are the size the client requests without `targetPixels`; the console accepts any image at that ratio. Placements are declared here, in the app repository, and registered with the console from CI by `assetlib sync --platform android` (the `@assetlib/cli` package attached to each [JavaScript SDK release](https://github.com/AssetLib/sdk-js/releases)); a placement someone requested in the console becomes declared when a build registers the same contract. For example:
 
 ```json
 {"schemaVersion":1,"placements":[{"key":"travel.coast","symbol":["Travel","coast"],"width":1200,"height":900}]}
@@ -120,7 +120,7 @@ node scripts/generate-assets.mjs catalog.json app/src/main/java/com/example/app/
 node scripts/generate-assets.mjs catalog.json app/src/main/java/com/example/app/AppAssets.kt com.example.app --check
 ```
 
-Use `AppAssets.Travel.coast` at image call sites. Generation validates duplicate keys/symbols, Kotlin identifiers, and dimensions. A symbol cannot be a Kotlin keyword or one of `AppAssets`, `AssetRef`, `AssetAccessibility` and `AssetRendering`; two groups cannot differ only in case, and two names in one group cannot share a JVM getter (`coast` and `Coast`). A package segment that is a Kotlin keyword is escaped with backticks. It is a checked-in project catalog, not automatic discovery of every image or observed runtime usage. Changing a Kotlin symbol need not change its remote key. Keep old placements while installed app versions still need them; incompatible dimensions fall back instead of silently changing a contract.
+Use `AppAssets.Travel.coast` at image call sites. Generation validates duplicate keys/symbols, Kotlin identifiers, and dimensions. A symbol cannot be a Kotlin keyword or one of `AppAssets`, `AssetRef`, `AssetAccessibility` and `AssetRendering`; two groups cannot differ only in case, and two names in one group cannot share a JVM getter (`coast` and `Coast`). A package segment that is a Kotlin keyword is escaped with backticks. It is a checked-in project catalog, not automatic discovery of every image or observed runtime usage. Changing a Kotlin symbol need not change its remote key. State sets, several named images that publish together, are resolved by the JavaScript SDK; this SDK shows a stateful placement's default state, which the manifest carries as the placement's base image. Usage reporting, the JavaScript SDK's opt-in telemetry, is not in this SDK yet (planned): the console's Where used shows nothing from an Android app beyond the builds `assetlib sync` registers. Keep old placements while installed app versions still need them; incompatible dimensions fall back instead of silently changing a contract.
 
 ### Tintable icons
 
